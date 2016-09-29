@@ -25,20 +25,17 @@ l<html>
 			</p>
 				<input type="button" id="btn" value="Check" />
 		<script>
-			var regex = /[^a-z0-9]/gi;
-	document.getElementById('btn').addEventListener('click', function () {
-
+var regex = /[^a-z0-9]/gi;
+document.getElementById('btn').addEventListener('click', function () {
 if (str1.length !== str2.length) {
         return false;
     }
     
     var sortStr1 = str1.split('').sort().join('');
     var sortStr2 = str2.split('').sort().join('');
-
     return (sortStr1 === sortStr2);
 		alert('Result:' + isAnagram);
 		}, false);
-		
 		</script>
 		</div>
 	</body>
