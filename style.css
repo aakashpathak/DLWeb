@@ -1,0 +1,51 @@
+.wrapper{
+	width:800px;
+	background:#eee;
+	margin: 0 auto 0 auto;
+}
+
+.heading{
+	height:100px;
+	background:lightblue;
+	padding:20px;
+	text-align: center;
+	font-family: cambria;
+	font-size:14pt;
+	color:darkblue;
+}
+.content{
+	min-height:50px;
+	background:darkgray;
+	padding:10px;
+	text-align: center;
+	font-family: cambria;
+	font-size:18pt;
+	color:white;
+	margin-top:10px;
+	margin-bottom:5px;
+	border-radius:5px;
+	
+}
+.anagram{
+	min-height:200px;
+	background:#ddd;
+	border-radius:20px;
+	padding:10px;
+	text-align: center;
+	font-family: cambria;
+	font-size:14pt;
+	color:black;
+}
+.result{
+	min-height:50px;
+	background:lightgreen;
+	padding:10px;
+	text-align: center;
+	font-family: cambria;
+	font-size:16pt;
+	color:darkblue;
+	border-radius:10px;
+	margin-top:5px;
+	
+	
+}
