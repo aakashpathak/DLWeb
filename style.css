@@ -12,6 +12,7 @@
 	font-family: cambria;
 	font-size:14pt;
 	color:darkblue;
+	border-radius:20px;
 }
 .content{
 	min-height:50px;
