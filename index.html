@@ -1,0 +1,42 @@
+<html>
+	<head>
+		<title>Duolingo Homework Task - Aakash Pathak</title>
+		<link rel="stylesheet" href="style.css"
+	type="text/css" />
+		</head>
+<body>
+	<div class="wrapper">
+		<div class="heading">
+			<h1>Duolingo Homework Task - Aakash Pathak</h1>
+		</div>
+		<div class="content">
+			Anagram Checker
+			</div>
+		<div class="anagram">
+			Please enter the two strings to check in the input boxes below:
+			</p>
+			</p>
+				<input type="text" id="str1" />
+			</p>
+			</p>
+				<input type="text" id="str2" />
+			</p>
+				<input type="button" id="btn" value="check" />
+		<script>
+		var regex = /[^a-z0-9]/gi;
+document.getElementById('btn').addEventListener('click', function () {
+
+    var str1 = (document.getElementById('str1').value).replace(regex, ''),
+        str2 = (document.getElementById('str2').value).replace(regex, '');
+
+    var isAnagram = (str1.length === str2.length) && (str1.toLowerCase().split('').sort().join('') === str2.toLowerCase().split('').sort().join(''));
+		alert('Is Anagram:' + isAnagram);
+		}, false);
+		
+		</script>
+		</div>
+		<div class="result">
+			Result
+		</div>
+	</body>
+</html>
