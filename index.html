@@ -28,10 +28,14 @@ l<html>
 		var regex = /[^a-z0-9]/gi;
 document.getElementById('btn').addEventListener('click', function () {
 
-    var str1 = (document.getElementById('str1').value).replace(regex, ''),
-        str2 = (document.getElementById('str2').value).replace(regex, '');
+if (str1.length !== str2.length) {
+        return false;
+    }
+    
+    var sortStr1 = str1.split('').sort().join('');
+    var sortStr2 = str2.split('').sort().join('');
 
-    var isAnagram = (str1.length === str2.length) && (str1.toLowerCase().split('').sort().join('') === str2.toLowerCase().split('').sort().join(''));
+    return (sortStr1 === sortStr2);
 		alert('Result:' + isAnagram);
 		}, false);
 		
