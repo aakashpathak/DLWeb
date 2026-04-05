@@ -1,0 +1,65 @@
+# Garage door open-too-long checker.
+#
+# SETUP: add these secrets to the repo (Settings -> Secrets and variables -> Actions):
+#   MYQ_EMAIL        - MyQ account email
+#   MYQ_PASSWORD     - MyQ account password
+#   SMTP_HOST        - e.g. smtp.gmail.com
+#   SMTP_PORT        - e.g. 587  (optional, defaults to 587)
+#   SMTP_USER        - SMTP login / from address
+#   SMTP_PASSWORD    - SMTP password or app password (for Gmail, create an App Password)
+#   ALERT_TO         - where to send alerts
+#   ALERT_FROM       - (optional) from address, defaults to SMTP_USER
+#
+# The workflow commits the updated state.json back to this branch so we only
+# alert once per open session.
+
+name: Garage Door Check
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"   # every 5 minutes
+  workflow_dispatch:
+
+concurrency:
+  group: garage-check
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: pip install -r myq_checker/requirements.txt
+
+      - name: Check doors
+        env:
+          MYQ_EMAIL: ${{ secrets.MYQ_EMAIL }}
+          MYQ_PASSWORD: ${{ secrets.MYQ_PASSWORD }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          ALERT_TO: ${{ secrets.ALERT_TO }}
+          ALERT_FROM: ${{ secrets.ALERT_FROM }}
+        run: python myq_checker/check.py
+
+      - name: Commit state if changed
+        run: |
+          if ! git diff --quiet myq_checker/state.json; then
+            git config user.name  "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add myq_checker/state.json
+            git commit -m "chore: update garage door alert state"
+            git push
+          fi
