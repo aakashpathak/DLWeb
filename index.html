@@ -1,34 +1,244 @@
-<html>
-	<head>
-		<title>Duolingo Homework Task - Aakash Pathak</title>
-		<link rel="stylesheet" href="style.css"
-	type="text/css" />
-		</head>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Baby Tracker</title>
+  <link rel="stylesheet" href="style.css" type="text/css" />
+</head>
 <body>
-	<div class="wrapper">
-		<div class="heading">
-			<h1>Duolingo Homework Task - Aakash Pathak</h1>
-		</div>
-		<div class="content">
-			Anagram Checker
-			</p>
-		~Check if two strings are Anagrams or not~
-			</div>
-		<div class="anagram">
-			Please enter the two strings to check, in the input boxes below:
-			</p>
-			</p>
-				<input type="text" id="str1" />
-			</p>
-			</p>
-				<input type="text" id="str2" />
-			</p>
-				<button onclick="Func()">Check</button>
-		<script>
-		function Func() {
-    alert("Results will be displayed here!");
-}
-</script>
-		</div>
-	</body>
+  <div class="wrapper">
+    <div class="heading">
+      <h1>Baby Tracker</h1>
+      <div class="subtitle">Pee, poop &amp; feeding log</div>
+    </div>
+
+    <div class="section quick-log">
+      <h2>Log an activity</h2>
+      <div class="button-row">
+        <button class="log-btn pee" data-type="pee">Pee</button>
+        <button class="log-btn poop" data-type="poop">Poop</button>
+      </div>
+      <div class="feed-row">
+        <label>
+          Feed duration (min):
+          <input type="number" id="feedDuration" min="1" step="1" placeholder="e.g. 15" />
+        </label>
+        <label>
+          Side:
+          <select id="feedSide">
+            <option value="left">Left</option>
+            <option value="right">Right</option>
+            <option value="both">Both</option>
+            <option value="bottle">Bottle</option>
+          </select>
+        </label>
+        <button class="log-btn feed" data-type="feed">Log Feed</button>
+      </div>
+      <div id="confirmation" class="confirmation" aria-live="polite"></div>
+    </div>
+
+    <div class="section summary">
+      <h2>Daily summary</h2>
+      <div class="date-picker">
+        <label for="summaryDate">Date:</label>
+        <input type="date" id="summaryDate" />
+      </div>
+      <div id="summaryStats" class="summary-stats"></div>
+      <h3>Events</h3>
+      <ul id="eventList" class="event-list"></ul>
+    </div>
+
+    <div class="section history">
+      <h2>Last 7 days</h2>
+      <table id="weekTable">
+        <thead>
+          <tr><th>Date</th><th>Pees</th><th>Poops</th><th>Feeds</th><th>Feed min</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="section danger-zone">
+      <button id="exportBtn" class="secondary-btn">Export JSON</button>
+      <button id="clearBtn" class="secondary-btn danger">Clear all data</button>
+    </div>
+  </div>
+
+  <script>
+    const STORAGE_KEY = 'babyTrackerEvents';
+
+    function loadEvents() {
+      try {
+        return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function saveEvents(events) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
+    }
+
+    function addEvent(type, extra) {
+      const events = loadEvents();
+      const event = { id: Date.now() + Math.random(), type, timestamp: Date.now(), ...extra };
+      events.push(event);
+      saveEvents(events);
+      return event;
+    }
+
+    function deleteEvent(id) {
+      const events = loadEvents().filter(e => e.id !== id);
+      saveEvents(events);
+    }
+
+    function localDateKey(ts) {
+      const d = new Date(ts);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+
+    function formatTime(ts) {
+      return new Date(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    }
+
+    function showConfirmation(msg) {
+      const el = document.getElementById('confirmation');
+      el.textContent = msg;
+      el.classList.add('visible');
+      clearTimeout(showConfirmation._t);
+      showConfirmation._t = setTimeout(() => el.classList.remove('visible'), 2000);
+    }
+
+    function eventLabel(ev) {
+      if (ev.type === 'pee') return 'Pee';
+      if (ev.type === 'poop') return 'Poop';
+      if (ev.type === 'feed') {
+        const parts = [];
+        if (ev.durationMin) parts.push(`${ev.durationMin} min`);
+        if (ev.side) parts.push(ev.side);
+        return `Feed${parts.length ? ' — ' + parts.join(', ') : ''}`;
+      }
+      return ev.type;
+    }
+
+    function renderSummary() {
+      const dateStr = document.getElementById('summaryDate').value;
+      const events = loadEvents()
+        .filter(e => localDateKey(e.timestamp) === dateStr)
+        .sort((a, b) => b.timestamp - a.timestamp);
+
+      const pees = events.filter(e => e.type === 'pee').length;
+      const poops = events.filter(e => e.type === 'poop').length;
+      const feeds = events.filter(e => e.type === 'feed');
+      const feedMinutes = feeds.reduce((sum, e) => sum + (Number(e.durationMin) || 0), 0);
+
+      const statsEl = document.getElementById('summaryStats');
+      statsEl.innerHTML = `
+        <div class="stat"><span class="stat-num">${pees}</span><span class="stat-label">Pees</span></div>
+        <div class="stat"><span class="stat-num">${poops}</span><span class="stat-label">Poops</span></div>
+        <div class="stat"><span class="stat-num">${feeds.length}</span><span class="stat-label">Feeds</span></div>
+        <div class="stat"><span class="stat-num">${feedMinutes}</span><span class="stat-label">Feed min</span></div>
+      `;
+
+      const listEl = document.getElementById('eventList');
+      if (events.length === 0) {
+        listEl.innerHTML = '<li class="empty">No events recorded for this day.</li>';
+      } else {
+        listEl.innerHTML = events.map(ev => `
+          <li class="event event-${ev.type}">
+            <span class="event-time">${formatTime(ev.timestamp)}</span>
+            <span class="event-label">${eventLabel(ev)}</span>
+            <button class="delete-btn" data-id="${ev.id}" title="Delete">×</button>
+          </li>
+        `).join('');
+      }
+    }
+
+    function renderWeek() {
+      const tbody = document.querySelector('#weekTable tbody');
+      const events = loadEvents();
+      const rows = [];
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(today);
+        d.setDate(today.getDate() - i);
+        const key = localDateKey(d.getTime());
+        const dayEvents = events.filter(e => localDateKey(e.timestamp) === key);
+        const pees = dayEvents.filter(e => e.type === 'pee').length;
+        const poops = dayEvents.filter(e => e.type === 'poop').length;
+        const feeds = dayEvents.filter(e => e.type === 'feed');
+        const feedMin = feeds.reduce((s, e) => s + (Number(e.durationMin) || 0), 0);
+        const label = d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+        rows.push(`<tr><td>${label}</td><td>${pees}</td><td>${poops}</td><td>${feeds.length}</td><td>${feedMin}</td></tr>`);
+      }
+      tbody.innerHTML = rows.join('');
+    }
+
+    function renderAll() {
+      renderSummary();
+      renderWeek();
+    }
+
+    document.querySelectorAll('.log-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const type = btn.dataset.type;
+        if (type === 'feed') {
+          const durationInput = document.getElementById('feedDuration');
+          const duration = parseInt(durationInput.value, 10);
+          if (!duration || duration <= 0) {
+            showConfirmation('Enter a feed duration in minutes.');
+            durationInput.focus();
+            return;
+          }
+          const side = document.getElementById('feedSide').value;
+          addEvent('feed', { durationMin: duration, side });
+          durationInput.value = '';
+          showConfirmation(`Feed logged (${duration} min, ${side}).`);
+        } else {
+          addEvent(type);
+          showConfirmation(`${type[0].toUpperCase() + type.slice(1)} logged.`);
+        }
+        renderAll();
+      });
+    });
+
+    document.getElementById('eventList').addEventListener('click', (e) => {
+      if (e.target.classList.contains('delete-btn')) {
+        const id = parseFloat(e.target.dataset.id);
+        if (confirm('Delete this event?')) {
+          deleteEvent(id);
+          renderAll();
+        }
+      }
+    });
+
+    document.getElementById('summaryDate').addEventListener('change', renderSummary);
+
+    document.getElementById('clearBtn').addEventListener('click', () => {
+      if (confirm('Delete ALL recorded data? This cannot be undone.')) {
+        localStorage.removeItem(STORAGE_KEY);
+        renderAll();
+      }
+    });
+
+    document.getElementById('exportBtn').addEventListener('click', () => {
+      const data = JSON.stringify(loadEvents(), null, 2);
+      const blob = new Blob([data], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `baby-tracker-${localDateKey(Date.now())}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    document.getElementById('summaryDate').value = localDateKey(Date.now());
+    renderAll();
+  </script>
+</body>
 </html>
