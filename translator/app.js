@@ -118,13 +118,19 @@ function showBanner(msg) {
   els.banner.hidden = false;
 }
 
-// Banner with several lines of guidance plus action buttons.
+// Banner with several lines of guidance plus action buttons. A line may be
+// a string or {diag: true, text} for the small technical-details line.
 function showBannerRich(lines, actions) {
   els.banner.textContent = '';
   for (const t of lines) {
     const p = document.createElement('div');
-    p.className = 'banner-line';
-    p.textContent = t;
+    if (typeof t === 'object' && t && t.diag) {
+      p.className = 'banner-line banner-diag';
+      p.textContent = t.text;
+    } else {
+      p.className = 'banner-line';
+      p.textContent = t;
+    }
     els.banner.appendChild(p);
   }
   if (actions && actions.length) {
@@ -154,9 +160,11 @@ function unsupportedBrowserMessage() {
 }
 
 // Explains exactly why the microphone is unavailable and always offers a
-// button that re-requests permission on a fresh tap.
-async function showMicHelp(err) {
+// button that re-requests permission on a fresh tap. `source` says which
+// stage failed ('mic request' or 'speech recognition') for the details line.
+async function showMicHelp(err, source) {
   const name = (err && err.name) || '';
+  const errMsg = String((err && err.message) || '');
   let perm = '';
   try {
     if (navigator.permissions && navigator.permissions.query) {
@@ -164,6 +172,13 @@ async function showMicHelp(err) {
       perm = st.state || '';
     }
   } catch (e) { /* permission not queryable here */ }
+
+  // Readable in the banner so the exact failure can be reported.
+  const diag = 'Details: [' + (source || 'mic') + '] ' + (name || 'unknown')
+    + (errMsg ? ' — ' + errMsg : '')
+    + (perm ? ' · site permission: ' + perm : '')
+    + (IS_ANDROID ? ' · Android' : IS_IOS ? ' · iOS' : '');
+  try { console.warn('[VoiceBridge] mic failure', { source, name, errMsg, perm }); } catch (e) { /* no-op */ }
 
   const askAgain = {
     label: '🎙 Ask for microphone permission',
@@ -180,17 +195,18 @@ async function showMicHelp(err) {
       }
     },
   };
+  const show = (lines, actions) => showBannerRich(lines.concat([{ diag: true, text: diag }]), actions);
 
   if (name === 'NotFoundError' || name === 'OverconstrainedError') {
-    showBannerRich(['No microphone was found on this device. Connect one and try again.'], [askAgain]);
+    show(['No microphone was found on this device. Connect one and try again.'], [askAgain]);
     return;
   }
   if (name === 'NotReadableError' || name === 'AbortError') {
-    showBannerRich(['The microphone is busy in another app. Close anything that is recording (a call, voice notes) and try again.'], [askAgain]);
+    show(['The microphone is busy or unavailable. Close anything recording (a call, voice notes, another tab using the mic) and try again.'], [askAgain]);
     return;
   }
   if (isInAppBrowser()) {
-    showBannerRich([
+    show([
       'This page is open inside another app\'s built-in browser, which cannot ask for microphone permission.',
       IS_IOS
         ? 'Open it in Safari instead: tap the share or menu icon and choose "Open in Safari" — or copy the link below and paste it there.'
@@ -198,18 +214,38 @@ async function showMicHelp(err) {
     ], [copyLink, askAgain]);
     return;
   }
+
+  // The site has permission (or the OS reported a system-level denial) yet
+  // the mic still failed: the *device* is blocking the browser app's mic.
+  const sysDenied = /system/i.test(errMsg);
+  if (perm === 'granted' || sysDenied) {
+    const steps = IS_ANDROID
+      ? ['This site has microphone permission, but Android is blocking Chrome\'s own mic access.',
+         'Open Android Settings → Apps → Chrome → Permissions → Microphone → Allow. Then come back and tap the button below.']
+      : IS_IOS
+        ? ['This site has microphone permission, but iOS is blocking the browser\'s mic access.',
+           'Open iOS Settings → Apps → Safari → Microphone and turn it on, then come back and tap the button below.']
+        : ['This site has microphone permission, but your operating system is blocking the browser\'s mic access.',
+           'Windows: Settings → Privacy & security → Microphone → allow microphone access, including for desktop apps. macOS: System Settings → Privacy & Security → Microphone → turn on your browser. Then fully restart the browser.'];
+    show(steps, [askAgain]);
+    return;
+  }
   if (perm === 'denied') {
     const steps = IS_ANDROID
-      ? 'The microphone is blocked for this site. Tap the icon just left of the address bar → Permissions (or Site settings) → Microphone → Allow, then reload this page.'
+      ? 'The microphone is blocked for this site. Tap the icon just left of the address bar → Permissions (or Site settings) → Microphone → Allow, then reload this page. If it is already Allow, also check Android Settings → Apps → Chrome → Permissions → Microphone.'
       : IS_IOS
         ? 'The microphone is blocked. In Safari tap "AA" in the address bar → Website Settings → Microphone → Allow. Also check iOS Settings → Apps → Safari → Microphone.'
         : 'The microphone is blocked for this site. Click the icon just left of the address bar, set Microphone to Allow, then reload this page. Also make sure your system settings let this browser use the microphone.';
-    showBannerRich([steps], [askAgain]);
+    show([steps], [askAgain]);
     return;
   }
-  showBannerRich([
+  show([
     'The browser did not grant microphone access — the permission prompt may have been dismissed.',
-    'Tap the button below to ask again.',
+    'Tap the button below to ask again. If nothing happens, also check your device settings: ' + (IS_ANDROID
+      ? 'Android Settings → Apps → Chrome → Permissions → Microphone → Allow.'
+      : IS_IOS
+        ? 'iOS Settings → Apps → Safari → Microphone.'
+        : 'your system privacy settings must allow this browser to use the microphone.'),
   ], [askAgain]);
 }
 
@@ -737,15 +773,19 @@ function handleRecError(code) {
   switch (code) {
     case 'not-allowed':
       stopConversation();
-      showMicHelp({ name: 'NotAllowedError' });
+      showMicHelp({ name: 'NotAllowedError' }, 'speech recognition');
       break;
     case 'service-not-allowed':
       stopConversation();
-      showBanner('This browser\'s speech recognition service is switched off (some browsers, like Brave, disable it). Open this page in Google Chrome.');
+      showBanner('This browser\'s speech recognition service is unavailable. Use regular Google Chrome (privacy browsers like Brave disable it); on Android also make sure the Google app and "Speech Services by Google" are enabled and Chrome is up to date.');
       break;
     case 'audio-capture':
       stopConversation();
-      showMicHelp({ name: 'NotFoundError' });
+      showMicHelp({ name: 'NotFoundError' }, 'speech recognition');
+      break;
+    case 'language-not-supported':
+      stopConversation();
+      showBanner('This browser\'s speech service does not support one of the selected languages. Try Google Chrome, where all three languages are supported.');
       break;
     case 'network':
       state.netErrors++;
@@ -828,7 +868,7 @@ async function doStart() {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       stream.getTracks().forEach((t) => t.stop());
     } catch (e) {
-      await showMicHelp(e);
+      await showMicHelp(e, 'mic request');
       return;
     }
   }

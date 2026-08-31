@@ -142,6 +142,14 @@ body {
 .banner-line { margin: 0 0 8px; }
 .banner-line:last-of-type { margin-bottom: 0; }
 
+.banner-diag {
+  margin-top: 10px;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  opacity: 0.75;
+  word-break: break-word;
+}
+
 .banner-actions {
   display: flex;
   flex-wrap: wrap;
