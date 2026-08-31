@@ -139,6 +139,29 @@ body {
   line-height: 1.45;
 }
 
+.banner-line { margin: 0 0 8px; }
+.banner-line:last-of-type { margin-bottom: 0; }
+
+.banner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.banner-btn {
+  padding: 10px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.banner-btn:active { background: rgba(255, 255, 255, 0.22); }
+
 .toast {
   position: fixed;
   left: 50%;

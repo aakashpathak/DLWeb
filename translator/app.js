@@ -85,6 +85,22 @@ function getRecCtor() { return window.SpeechRecognition || window.webkitSpeechRe
 function getSynth() { return window.speechSynthesis || null; }
 
 // ------------------------------------------------------------
+// Environment detection (used for actionable error messages)
+// ------------------------------------------------------------
+
+const UA = navigator.userAgent || '';
+const IS_IOS = /iPad|iPhone|iPod/.test(UA)
+  || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const IS_ANDROID = /Android/i.test(UA);
+
+// In-app browsers (links opened inside WhatsApp, Instagram, Gmail, the
+// Google app, …) usually cannot show a microphone permission prompt at all.
+function isInAppBrowser() {
+  if (IS_ANDROID && /\bwv\b/.test(UA)) return true; // Android WebView
+  return /(FBAN|FBAV|FB_IAB|Instagram|Line\/|MicroMessenger|Snapchat|musical_ly|TikTok|GSA\/|OKApp|Twitter)/i.test(UA);
+}
+
+// ------------------------------------------------------------
 // UI helpers
 // ------------------------------------------------------------
 
@@ -102,7 +118,100 @@ function showBanner(msg) {
   els.banner.hidden = false;
 }
 
+// Banner with several lines of guidance plus action buttons.
+function showBannerRich(lines, actions) {
+  els.banner.textContent = '';
+  for (const t of lines) {
+    const p = document.createElement('div');
+    p.className = 'banner-line';
+    p.textContent = t;
+    els.banner.appendChild(p);
+  }
+  if (actions && actions.length) {
+    const row = document.createElement('div');
+    row.className = 'banner-actions';
+    for (const a of actions) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'banner-btn';
+      b.textContent = a.label;
+      b.addEventListener('click', a.onClick);
+      row.appendChild(b);
+    }
+    els.banner.appendChild(row);
+  }
+  els.banner.hidden = false;
+}
+
 function hideBanner() { els.banner.hidden = true; }
+
+function unsupportedBrowserMessage() {
+  if (isInAppBrowser()) {
+    return 'This page is open inside another app\'s built-in browser, which cannot do live speech recognition. Open the link in ' + (IS_IOS ? 'Safari' : 'Chrome') + ' instead.';
+  }
+  if (IS_IOS) return 'On iPhone and iPad, live speech recognition only works in Safari. Open this page in Safari.';
+  return 'This browser cannot do live speech recognition. Please open this page in Google Chrome (or Microsoft Edge).';
+}
+
+// Explains exactly why the microphone is unavailable and always offers a
+// button that re-requests permission on a fresh tap.
+async function showMicHelp(err) {
+  const name = (err && err.name) || '';
+  let perm = '';
+  try {
+    if (navigator.permissions && navigator.permissions.query) {
+      const st = await navigator.permissions.query({ name: 'microphone' });
+      perm = st.state || '';
+    }
+  } catch (e) { /* permission not queryable here */ }
+
+  const askAgain = {
+    label: '🎙 Ask for microphone permission',
+    onClick: () => { hideBanner(); startConversation(); },
+  };
+  const copyLink = {
+    label: '📋 Copy link',
+    onClick: async () => {
+      try {
+        await navigator.clipboard.writeText(location.href);
+        toast('Link copied — paste it into ' + (IS_IOS ? 'Safari.' : 'Chrome.'));
+      } catch (e) {
+        toast('Could not copy automatically — copy the link from the address bar.');
+      }
+    },
+  };
+
+  if (name === 'NotFoundError' || name === 'OverconstrainedError') {
+    showBannerRich(['No microphone was found on this device. Connect one and try again.'], [askAgain]);
+    return;
+  }
+  if (name === 'NotReadableError' || name === 'AbortError') {
+    showBannerRich(['The microphone is busy in another app. Close anything that is recording (a call, voice notes) and try again.'], [askAgain]);
+    return;
+  }
+  if (isInAppBrowser()) {
+    showBannerRich([
+      'This page is open inside another app\'s built-in browser, which cannot ask for microphone permission.',
+      IS_IOS
+        ? 'Open it in Safari instead: tap the share or menu icon and choose "Open in Safari" — or copy the link below and paste it there.'
+        : 'Open it in Chrome instead: tap the ⋮ menu and choose "Open in Chrome" (or "Open in browser") — or copy the link below and paste it there.',
+    ], [copyLink, askAgain]);
+    return;
+  }
+  if (perm === 'denied') {
+    const steps = IS_ANDROID
+      ? 'The microphone is blocked for this site. Tap the icon just left of the address bar → Permissions (or Site settings) → Microphone → Allow, then reload this page.'
+      : IS_IOS
+        ? 'The microphone is blocked. In Safari tap "AA" in the address bar → Website Settings → Microphone → Allow. Also check iOS Settings → Apps → Safari → Microphone.'
+        : 'The microphone is blocked for this site. Click the icon just left of the address bar, set Microphone to Allow, then reload this page. Also make sure your system settings let this browser use the microphone.';
+    showBannerRich([steps], [askAgain]);
+    return;
+  }
+  showBannerRich([
+    'The browser did not grant microphone access — the permission prompt may have been dismissed.',
+    'Tap the button below to ask again.',
+  ], [askAgain]);
+}
 
 let toastTimer = 0;
 function toast(msg) {
@@ -627,13 +736,16 @@ function resumeMic() {
 function handleRecError(code) {
   switch (code) {
     case 'not-allowed':
+      stopConversation();
+      showMicHelp({ name: 'NotAllowedError' });
+      break;
     case 'service-not-allowed':
       stopConversation();
-      showBanner('Microphone access was blocked. Allow the microphone for this site (padlock icon → Site settings) and tap Start again.');
+      showBanner('This browser\'s speech recognition service is switched off (some browsers, like Brave, disable it). Open this page in Google Chrome.');
       break;
     case 'audio-capture':
       stopConversation();
-      showBanner('No microphone was found. Connect one and tap Start again.');
+      showMicHelp({ name: 'NotFoundError' });
       break;
     case 'network':
       state.netErrors++;
@@ -691,7 +803,7 @@ async function doStart() {
   hideBanner();
 
   if (!getRecCtor()) {
-    showBanner('This browser cannot do live speech recognition. Please open this page in Chrome (Android or desktop), Edge, or Safari.');
+    showBanner(unsupportedBrowserMessage());
     return;
   }
   if (!window.isSecureContext) {
@@ -699,19 +811,8 @@ async function doStart() {
     return;
   }
 
-  // Ask for the mic up front so permission errors are clear.
-  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach((t) => t.stop());
-    } catch (e) {
-      showBanner('Microphone permission is required. Allow the mic and tap Start again.');
-      return;
-    }
-  }
-
-  // Unlock speech output on iOS/Safari: TTS must first be triggered
-  // by a user gesture, and Start was tapped just now.
+  // Unlock speech output on iOS/Safari: TTS must first be triggered by a
+  // user gesture, so do it synchronously with the Start tap, before any await.
   try {
     const synth = getSynth();
     if (synth && typeof window.SpeechSynthesisUtterance === 'function') {
@@ -720,6 +821,17 @@ async function doStart() {
       synth.speak(u);
     }
   } catch (e) { /* no-op */ }
+
+  // Ask for the mic up front so permission errors are clear.
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((t) => t.stop());
+    } catch (e) {
+      await showMicHelp(e);
+      return;
+    }
+  }
 
   refreshVoices();
   state.running = true;
@@ -830,5 +942,5 @@ refreshVoices();
 updateMainBtn();
 setStatus('idle', 'Tap Start to begin');
 if (!getRecCtor()) {
-  showBanner('Heads-up: this browser cannot do live speech recognition. Open this page in Chrome (Android or desktop), Edge, or Safari.');
+  showBanner('Heads-up: ' + unsupportedBrowserMessage());
 }
