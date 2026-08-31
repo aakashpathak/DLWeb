@@ -19,8 +19,11 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # A custom environment name: the auto-created "github-pages" environment
+    # restricts deployments to the default branch, which would block deploys
+    # from the app's feature branch.
     environment:
-      name: github-pages
+      name: pages-live
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout
