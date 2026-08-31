@@ -12,10 +12,11 @@ Hindi, Spanish** (any pair of them).
 
 ## Using it
 
-1. Open `translator/index.html` from an HTTPS host (e.g. GitHub Pages:
-   `https://<user>.github.io/DLWeb/translator/`) or locally via
-   `python3 -m http.server` → `http://localhost:8000/translator/`.
-   The mic requires a secure page, so opening the raw file may not work.
+1. Live at **https://aakashpathak.github.io/DLWeb/translator/** — the repo's
+   GitHub Actions workflow (`.github/workflows/pages.yml`) deploys the site
+   automatically on every push. (For local hacking:
+   `python3 -m http.server` → `http://localhost:8000/translator/`; the mic
+   requires HTTPS or localhost.)
 2. Best in **Chrome** (Android or desktop); Edge and Safari also work.
    Needs internet (speech recognition and translation are online services).
 3. Pick the pair, tap **Start conversation**, allow the microphone, and put
