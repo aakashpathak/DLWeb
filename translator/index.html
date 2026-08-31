@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b1020">
+  <title>VoiceBridge — Live Two-Way Voice Translator</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌐</text></svg>">
+</head>
+<body>
+  <div class="app">
+
+    <header class="top">
+      <div class="brand">
+        <span class="brand-icon">🌐</span>
+        <div>
+          <h1>VoiceBridge</h1>
+          <p class="tagline">Hands-free two-way voice translator</p>
+        </div>
+      </div>
+    </header>
+
+    <div class="lang-bar" role="group" aria-label="Language pair">
+      <label class="lang-card side-a">
+        <span class="lang-label">Language 1</span>
+        <select id="langA" aria-label="First language"></select>
+      </label>
+      <button id="swapBtn" class="swap-btn" type="button" aria-label="Swap languages" title="Swap languages">⇄</button>
+      <label class="lang-card side-b">
+        <span class="lang-label">Language 2</span>
+        <select id="langB" aria-label="Second language"></select>
+      </label>
+    </div>
+
+    <div id="banner" class="banner" hidden></div>
+
+    <main id="feed" class="feed" aria-live="polite">
+      <div id="empty" class="empty">
+        <div class="empty-icon">🎙️</div>
+        <h2>Talk across languages, hands-free</h2>
+        <ol>
+          <li>Pick the two languages above.</li>
+          <li>Tap <b>Start conversation</b> and allow the microphone.</li>
+          <li>Just talk — in either language. Nothing else to tap.</li>
+        </ol>
+        <p class="empty-note">Whatever is heard in one language is instantly spoken aloud in the other — the app figures out who is talking on its own. Tap any bubble later to replay it.</p>
+        <p class="empty-fineprint">Works best in Chrome · needs internet · uses your browser's speech service</p>
+      </div>
+    </main>
+
+    <div id="interim" class="interim" hidden></div>
+
+    <footer class="controls">
+      <div id="status" class="status" data-kind="idle">
+        <span class="status-viz" aria-hidden="true">
+          <span class="dot"></span>
+          <span class="bars"><i></i><i></i><i></i><i></i></span>
+        </span>
+        <span id="statusText">Tap Start to begin</span>
+      </div>
+      <button id="mainBtn" class="main-btn" type="button">Start conversation</button>
+      <button id="clearBtn" class="clear-btn" type="button" hidden>Clear conversation</button>
+    </footer>
+
+  </div>
+  <script src="app.js" defer></script>
+</body>
+</html>
