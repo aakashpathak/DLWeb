@@ -71,6 +71,8 @@ h1, h2, h3 { margin: 0; font-weight: 700; letter-spacing: -0.01em; }
 .upnext .sub { opacity: .85; font-size: 15px; }
 .upnext .count { font-variant-numeric: tabular-nums; font-size: 34px; font-weight: 800; letter-spacing: -0.02em; margin-top: 6px; }
 .upnext .count.late { color: #FFB4A8; }
+.upnext .bar { height: 5px; border-radius: 3px; background: rgba(255,255,255,.2); margin-top: 10px; overflow: hidden; }
+.upnext .bar > i { display: block; height: 100%; background: currentColor; opacity: .9; }
 .upnext .count-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .btn.light { background: rgba(255,255,255,.18); color: inherit; }
 @media (prefers-color-scheme: light) { .upnext .btn.light { background: rgba(255,255,255,.16); } }

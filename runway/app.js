@@ -83,16 +83,21 @@ function renderUpNext(active, now) {
   }
   if (!best) { box.hidden = true; return; }
   box.hidden = false;
-  const { t, s, start } = best;
+  const { t, s, start, end } = best;
   const diff = start - now;
-  const isNow = diff <= 0;
-  const label = s.kind === 'travel' ? 'Leave by' : s.kind === 'wake' ? 'Wake up at' : isNow ? 'Right now' : 'Up next';
-  const count = isNow ? (diff < -MIN ? `${humanDur(-diff)} late` : 'now') : `in ${humanDur(diff)}`;
+  const inProgress = diff <= 0 && now < end;
+  const late = diff < -MIN && !inProgress;
+  const idx = t.steps.indexOf(s);
+  const next = t.steps.slice(idx + 1).find((x) => x.startAt && !x.done);
+  const label = inProgress ? 'Now' : late ? 'Overdue' : s.kind === 'travel' ? 'Leave by' : s.kind === 'wake' ? 'Wake up at' : 'Up next';
+  const count = inProgress ? `${humanDur(end - now)} left` : late ? `${humanDur(-diff)} late` : `in ${humanDur(diff)}`;
+  const pct = inProgress ? Math.min(100, Math.round(((now - start) / (end - start)) * 100)) : 0;
   box.innerHTML = `
-    <div class="label">${label} · ${fmtTime(start)}</div>
+    <div class="label">${label} · ${fmtTime(start)}${inProgress ? `–${fmtTime(end)}` : ''}</div>
     <div class="big">${esc(s.title)}</div>
-    <div class="sub">for “${esc(t.title)}” · ${fmtDay(new Date(t.anchor), now)} ${fmtTime(new Date(t.anchor))}</div>
-    <div class="count-row"><div class="count ${diff < -MIN ? 'late' : ''}">${count}</div>
+    <div class="sub">for “${esc(t.title)}” · ${fmtDay(new Date(t.anchor), now)} ${fmtTime(new Date(t.anchor))}${next ? `<br>Then: ${esc(next.title)} at ${fmtTime(new Date(next.startAt))}` : ''}</div>
+    ${inProgress ? `<div class="bar"><i style="width:${pct}%"></i></div>` : ''}
+    <div class="count-row"><div class="count ${late ? 'late' : ''}">${count}</div>
     <button class="btn light sm" id="upNextDone">Done ✓</button></div>`;
   box.querySelector('#upNextDone').addEventListener('click', () => { s.done = true; t.updatedAt = Date.now(); store.save(); });
 }
@@ -118,7 +123,7 @@ function taskCard(t, now, overlapWith) {
     if (overlapWith && overlapWith.length) p.push(`<span class="pill warn">⚠️ Overlaps “${esc(overlapWith[0].title)}”</span>`);
     pills = p.join('');
   } else {
-    when = `${steps.length - doneCount} tiny steps · ~${totalMin(steps.filter((s) => !s.done))} min total`;
+    when = `${steps.length - doneCount} tiny steps · ~${totalMin(steps.filter((s) => !s.done))} min total${t.deadline ? ` · by ${esc(fmtDay(new Date(t.deadline), now))}` : ''}`;
     const nxt = steps.find((s) => !s.done);
     pills = nxt ? `<span class="pill next">Next: ${esc(nxt.title)}</span>` : '';
   }
@@ -321,6 +326,8 @@ function goReview() {
   $('rvTravel').value = draft.travelMin != null ? draft.travelMin : state.prefs.defaultTravel;
   setWhen('rv', draft.anchor);
   const hint = [];
+  if (draft.deadline) hint.push(`Deadline ${fmtDay(new Date(draft.deadline))} — you’ll get the logistics steps first, then set the real time.`);
+  if ($('rvAway').checked && draft.travelMin == null) hint.push(`Travel time is a guess (${state.prefs.defaultTravel} min) — fix it if you know it.`);
   if (draft.hints.includes('guessed-ampm')) hint.push('Guessed am/pm — double-check.');
   if (draft.hints.includes('no-time')) hint.push('Heard the day but no time — set it, or tap “No time yet”.');
   if (draft.hints.includes('vague-time')) hint.push('Set the exact time if you have it.');
@@ -361,6 +368,7 @@ function saveNew() {
     getReady: $('rvReady').checked,
     location: $('rvWhere').value.trim() || null,
     travelMin: $('rvAway').checked ? Number($('rvTravel').value || 0) : 0,
+    deadline: draft.deadline || null,
   };
   task.steps = buildPlan(task, state.prefs);
   state.tasks.unshift(task);

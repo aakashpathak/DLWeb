@@ -115,3 +115,18 @@ test('overlap detection flags two plans on the same morning', async () => {
   const ov = findOverlaps([t1, t2, t3]);
   assert.ok(ov.get('a') && ov.get('b') && !ov.get('c'));
 });
+
+test('"by Friday" is a deadline, not an appointment', () => {
+  const r = parseTask('Get my oil changed by Friday', NOW);
+  assert.equal(r.anchor, null);
+  assert.equal(new Date(r.deadline).getDay(), 5);
+  assert.equal(r.title, 'Get my oil changed');
+});
+
+test('"tomorrow morning" and "half an hour away" are understood and removed from the title', () => {
+  const r = parseTask('Dentist tomorrow morning, half an hour away', NOW);
+  const a = new Date(r.anchor);
+  assert.equal(a.getDate(), 8); assert.equal(a.getHours(), 9);
+  assert.equal(r.travelMin, 30);
+  assert.equal(r.title, 'Dentist');
+});

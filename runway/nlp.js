@@ -18,8 +18,9 @@ const NUMPAT = '(\\d+(?:\\.\\d+)?|a|an|one|two|three|four|five|six|seven|eight|n
 
 export function parseTask(input, now = new Date()) {
   let text = ' ' + String(input || '').trim().replace(/\s+/g, ' ') + ' ';
-  const out = { title: '', anchor: null, travelMin: null, location: null, hints: [] };
+  const out = { title: '', anchor: null, travelMin: null, location: null, deadline: null, hints: [] };
   const strip = (re) => { text = text.replace(re, ' '); };
+  text = text.replace(/\bhalf an hour\b/gi, '30 minutes').replace(/\ban hour and a half\b/gi, '90 minutes').replace(/\b(\d+)\s*(?:and a half|\.5)\s*hours?\b/gi, (m, n) => `${n * 60 + 30} minutes`);
 
   // --- travel time: "45 minutes away", "a 30 min drive", "an hour away", "takes 20 minutes to get there"
   let m = text.match(new RegExp(`\\b(?:it'?s|its|about|around|which is|that'?s)?\\s*${NUMPAT}\\s*(?:and a half\\s*)?(hours?|hrs?|h|minutes?|mins?|m)\\s*(?:drive|away|drive away|from (?:here|home|me)|to get there|commute|ride)\\b`, 'i'));
@@ -54,9 +55,8 @@ export function parseTask(input, now = new Date()) {
 
   // --- vague times of day (only if no explicit time)
   if (!hasTime) {
-    if ((m = text.match(/\b(this|tomorrow|in the)?\s*(morning)\b/i))) { hour = 9; out.hints.push('vague-time'); }
-    else if ((m = text.match(/\b(this|tomorrow|in the)?\s*(afternoon)\b/i))) { hour = 14; out.hints.push('vague-time'); }
-    else if ((m = text.match(/\b(this|tomorrow|in the)?\s*(evening|tonight)\b/i))) { hour = 18; out.hints.push('vague-time'); }
+    const vague = (re, h) => { if ((m = text.match(re))) { hour = h; out.hints.push('vague-time'); text = text.replace(new RegExp(`\\b(in the|this|tomorrow)\\s+${m[2]}\\b`, 'i'), m[1] && /tomorrow/i.test(m[1]) ? ' tomorrow ' : ' ').replace(new RegExp(`(?<!\\w)${m[2]}\\b`, 'i'), ' '); return true; } return false; };
+    vague(/\b(this|tomorrow|in the)?\s*(morning)\b/i, 9) || vague(/\b(this|tomorrow|in the)?\s*(afternoon)\b/i, 14) || vague(/\b(this|tomorrow|in the)?\s*(evening)\b/i, 18) || vague(/\b(this|tomorrow|in the)?\s*(tonight)\b/i, 18);
   }
 
   // --- date
@@ -68,7 +68,9 @@ export function parseTask(input, now = new Date()) {
   else if ((m = text.match(/\b(today|tonight|this (?:morning|afternoon|evening))\b/i))) { date = addDays(0); strip(m[0]); }
   else if ((m = text.match(/\bin\s+(\d+|a|an|two|three|four|five|six|seven|ten)\s+(days?|weeks?)\b/i))) {
     const n = num(m[1]) || 1; date = addDays(m[2].toLowerCase().startsWith('w') ? n * 7 : n); strip(m[0]);
-  } else if ((m = text.match(/\b(?:on\s+|this\s+|next\s+|coming\s+)?(sunday|monday|tuesday|wednesday|thursday|friday|saturday|sun|mon|tue|tues|wed|thu|thur|thurs|fri|sat)\b/i))) {
+  } else if ((m = text.match(/\b(by\s+|on\s+|this\s+|next\s+|coming\s+)?(sunday|monday|tuesday|wednesday|thursday|friday|saturday|sun|mon|tue|tues|wed|thu|thur|thurs|fri|sat)\b/i))) {
+    const isDeadline = /^by\s/i.test(m[1] || '') && !hasTime;
+    m = [m[0], m[2]];
     const name = m[1].toLowerCase();
     const idx = WEEKDAYS.findIndex((w) => w.startsWith(name.slice(0, 3)));
     let diff = (idx - base.getDay() + 7) % 7;
@@ -81,6 +83,7 @@ export function parseTask(input, now = new Date()) {
       diff = 7;
     }
     date = addDays(diff); strip(m[0]);
+    if (isDeadline) { out.deadline = date.toISOString(); date = null; out.hints.push('deadline'); }
   } else if ((m = text.match(/\b(?:on\s+)?(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b/i))) {
     const mi = MONTHS.findIndex((x) => x.startsWith(m[1].toLowerCase().slice(0, 3)));
     date = new Date(base.getFullYear(), mi, parseInt(m[2], 10)); if (date < base) date.setFullYear(date.getFullYear() + 1); strip(m[0]);
@@ -106,6 +109,10 @@ export function parseTask(input, now = new Date()) {
     date.setHours(9, 0, 0, 0);
     out.anchor = date.toISOString();
     out.hints.push('no-time');
+  }
+  if (!out.anchor && !out.deadline && (m = text.match(/\bby\s+(tomorrow|tonight|end of (?:the )?(?:day|week)|eod|eow)\b/i))) {
+    const d = /week/i.test(m[1]) || /eow/i.test(m[1]) ? addDays((5 - base.getDay() + 7) % 7 || 7) : /tomorrow/i.test(m[1]) ? addDays(1) : addDays(0);
+    d.setHours(21, 0, 0, 0); out.deadline = d.toISOString(); out.hints.push('deadline'); strip(m[0]);
   }
 
   // --- location: "at the dentist", "at Costco", "in Bellevue", "to the airport"
