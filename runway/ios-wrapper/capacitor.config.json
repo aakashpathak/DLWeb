@@ -1,0 +1,13 @@
+{
+  "appId": "fyi.vaak.runway",
+  "appName": "Runway",
+  "webDir": "www",
+  "server": {
+    "url": "https://aakashpathak.github.io/DLWeb/runway/",
+    "cleartext": false
+  },
+  "ios": {
+    "contentInset": "always",
+    "backgroundColor": "#F6F5F2"
+  }
+}

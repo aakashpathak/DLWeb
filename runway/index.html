@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+  <title>Runway — plan backwards, arrive on time</title>
+  <meta name="description" content="Say a task. Runway breaks it into tiny steps and plans backwards from when you need to be there — shower, keys, traffic and all." />
+  <meta name="theme-color" content="#3B5BDB" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#1B1F2E" media="(prefers-color-scheme: dark)" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Runway" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icons/icon-180.png" />
+  <link rel="icon" href="icons/icon-192.png" />
+  <link rel="stylesheet" href="styles.css?v=1" />
+</head>
+<body>
+  <div id="app" class="app">
+    <header class="topbar">
+      <div>
+        <h1 class="brand">Runway</h1>
+        <div class="today" id="todayLabel"></div>
+      </div>
+      <button class="iconbtn" id="settingsBtn" aria-label="Settings">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      </button>
+    </header>
+
+    <main class="main" id="main">
+      <section id="upNext" class="upnext" hidden></section>
+      <section id="taskList" class="tasks"></section>
+      <section id="empty" class="empty" hidden>
+        <div class="empty-art">🛫</div>
+        <h2>What do you need to get done?</h2>
+        <p>Say it or type it. Runway plans <b>backwards</b> from when you need to be there — shower, keys, traffic, all of it — so you actually leave on time.</p>
+        <div class="examples">
+          <div class="examples-label">Try one</div>
+          <button class="example" data-example="Dentist Thursday at 8am, it's 45 minutes away">🦷 Dentist Thursday at 8am, 45 min away</button>
+          <button class="example" data-example="Get my oil changed">🚗 Get my oil changed</button>
+          <button class="example" data-example="Dinner with friends tonight at 7pm, 20 min away">🍽️ Dinner with friends tonight at 7pm</button>
+        </div>
+      </section>
+    </main>
+
+    <nav class="dock">
+      <button class="dockbtn plus" id="addBtn" aria-label="Type a task">
+        <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+      <button class="dockbtn mic" id="micBtn" aria-label="Say a task">
+        <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M8 21h8"/></svg>
+      </button>
+    </nav>
+  </div>
+
+  <!-- Add / review sheet -->
+  <div class="sheet-backdrop" id="sheetBackdrop" hidden></div>
+  <section class="sheet" id="addSheet" hidden aria-modal="true" role="dialog">
+    <div class="sheet-handle"></div>
+    <div class="sheet-step" id="stepCapture">
+      <h2 class="sheet-title">What’s the task?</h2>
+      <textarea id="taskInput" rows="3" placeholder="e.g. Get my oil changed  ·  Doctor at 8am Thursday, 45 min away" autocomplete="off" autocapitalize="sentences"></textarea>
+      <div class="capture-row">
+        <button class="micbig" id="micToggle" aria-label="Start listening">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M8 21h8"/></svg>
+        </button>
+        <div class="listen-status" id="listenStatus">Tap the mic and talk, or type.</div>
+      </div>
+      <div class="sheet-actions">
+        <button class="btn ghost" id="cancelAdd">Cancel</button>
+        <button class="btn primary" id="nextAdd">Next</button>
+      </div>
+    </div>
+
+    <div class="sheet-step" id="stepReview" hidden>
+      <h2 class="sheet-title">Quick check</h2>
+      <label class="field">
+        <span>Task</span>
+        <input type="text" id="rvTitle" />
+      </label>
+      <div class="field">
+        <span>When do you need to be there / start?</span>
+        <div class="when-row">
+          <input type="datetime-local" id="rvWhen" />
+          <button class="chip" id="rvNoTime" type="button">No time yet</button>
+        </div>
+        <div class="hint" id="rvWhenHint"></div>
+      </div>
+      <div class="field two">
+        <label>
+          <span>Where?</span>
+          <input type="text" id="rvWhere" placeholder="optional" />
+        </label>
+        <label>
+          <span>Travel (min)</span>
+          <input type="number" id="rvTravel" min="0" step="5" inputmode="numeric" />
+        </label>
+      </div>
+      <div class="toggles">
+        <label class="toggle"><input type="checkbox" id="rvAway" /> <span>I have to go somewhere</span></label>
+        <label class="toggle"><input type="checkbox" id="rvReady" /> <span>I need to shower / get ready first</span></label>
+      </div>
+      <div class="sheet-actions">
+        <button class="btn ghost" id="backAdd">Back</button>
+        <button class="btn primary" id="saveAdd">Plan it</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Settings sheet -->
+  <section class="sheet" id="settingsSheet" hidden aria-modal="true" role="dialog">
+    <div class="sheet-handle"></div>
+    <h2 class="sheet-title">Settings</h2>
+    <div class="settings-scroll">
+      <h3>How long things <em>really</em> take you</h3>
+      <p class="muted">Be honest, not aspirational. This is what makes the plan work.</p>
+      <div id="prefsGrid" class="prefs"></div>
+
+      <h3>Reminders</h3>
+      <p class="muted" id="notifStatus"></p>
+      <button class="btn secondary" id="notifBtn">Turn on reminders</button>
+
+      <h3>Account</h3>
+      <div id="accountBox" class="account"></div>
+
+      <h3>AI planning <span class="badge">later</span></h3>
+      <p class="muted">Right now plans come from Runway’s built-in rules and run entirely on your phone. When you’re ready, an API key goes here and the planner gets smarter.</p>
+      <label class="field"><span>API key (optional)</span><input type="password" id="aiKey" placeholder="not required" autocomplete="off" /></label>
+
+      <h3>Data</h3>
+      <div class="row-btns">
+        <button class="btn secondary" id="exportBtn">Export</button>
+        <button class="btn danger" id="wipeBtn">Delete everything</button>
+      </div>
+      <p class="muted small" id="version"></p>
+    </div>
+    <div class="sheet-actions">
+      <button class="btn primary" id="closeSettings">Done</button>
+    </div>
+  </section>
+
+  <!-- Edit task sheet -->
+  <section class="sheet" id="editSheet" hidden aria-modal="true" role="dialog">
+    <div class="sheet-handle"></div>
+    <h2 class="sheet-title">Edit</h2>
+    <label class="field"><span>Task</span><input type="text" id="edTitle" /></label>
+    <div class="field">
+      <span>When</span>
+      <div class="when-row">
+        <input type="datetime-local" id="edWhen" />
+        <button class="chip" id="edNoTime" type="button">No time yet</button>
+      </div>
+    </div>
+    <div class="field two">
+      <label><span>Where?</span><input type="text" id="edWhere" /></label>
+      <label><span>Travel (min)</span><input type="number" id="edTravel" min="0" step="5" inputmode="numeric" /></label>
+    </div>
+    <div class="toggles">
+      <label class="toggle"><input type="checkbox" id="edAway" /> <span>I have to go somewhere</span></label>
+      <label class="toggle"><input type="checkbox" id="edReady" /> <span>I need to shower / get ready first</span></label>
+    </div>
+    <div class="sheet-actions">
+      <button class="btn danger ghost" id="edDelete">Delete</button>
+      <button class="btn ghost" id="edCancel">Cancel</button>
+      <button class="btn primary" id="edSave">Replan</button>
+    </div>
+  </section>
+
+  <!-- Duration fix sheet -->
+  <section class="sheet" id="durSheet" hidden aria-modal="true" role="dialog">
+    <div class="sheet-handle"></div>
+    <h2 class="sheet-title" id="durTitle">How long does this really take?</h2>
+    <p class="muted">Honest number, not the hopeful one.</p>
+    <div class="stepper">
+      <button class="stepbtn" id="durMinus" aria-label="5 minutes less">−5</button>
+      <input type="number" id="durValue" inputmode="numeric" min="0" step="5" />
+      <span class="unit">min</span>
+      <button class="stepbtn" id="durPlus" aria-label="5 minutes more">+5</button>
+    </div>
+    <label class="toggle" id="durRememberRow"><input type="checkbox" id="durRemember" checked /> <span>Remember this for future plans</span></label>
+    <div class="sheet-actions">
+      <button class="btn ghost" id="durCancel">Cancel</button>
+      <button class="btn primary" id="durSave">Update plan</button>
+    </div>
+  </section>
+
+  <!-- Calendar sheet -->
+  <section class="sheet" id="calSheet" hidden aria-modal="true" role="dialog">
+    <div class="sheet-handle"></div>
+    <h2 class="sheet-title">Add to your calendar</h2>
+    <div class="cal-card"><div class="cal-title" id="calTitle"></div><div class="muted small" id="calSub" style="margin:4px 0 0"></div></div>
+    <a class="btn primary" id="calApple" href="#">Apple Calendar (iPhone)</a>
+    <a class="btn secondary" id="calGoogle" href="#" target="_blank" rel="noopener">Google Calendar</a>
+    <div class="sheet-actions"><button class="btn ghost" id="calClose">Close</button></div>
+  </section>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script type="module" src="app.js?v=1"></script>
+</body>
+</html>

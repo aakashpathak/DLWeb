@@ -1,0 +1,16 @@
+{
+  "name": "Runway",
+  "short_name": "Runway",
+  "description": "Backwards planning for ADHD brains: say a task, get the real timeline — shower, keys, traffic and all.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F6F5F2",
+  "theme_color": "#3B5BDB",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
