@@ -1,0 +1,15 @@
+{
+  "name": "runway-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Runway planning server: holds the API key, routes to Claude or a local model (Ollama).",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node check.mjs"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.124.0"
+  }
+}

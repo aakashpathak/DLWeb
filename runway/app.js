@@ -338,12 +338,12 @@ async function goReview() {
   stopMic();
   draft = parseTask(text);
   draft.raw = text; draft.ai = null;
-  if (state.settings.aiKey) {
+  if (aiEnabled()) {
     planning = true;
     $('nextAdd').disabled = true; $('nextAdd').textContent = 'Planning…';
-    $('listenStatus').innerHTML = '<span class="spin"></span> Claude is reading the whole thing and planning backwards…';
+    $('listenStatus').innerHTML = '<span class="spin"></span> Reading the whole thing and planning backwards…';
     try {
-      draft.ai = await planWithAI({ text, prefs: state.prefs, apiKey: state.settings.aiKey });
+      draft.ai = await planWithAI({ text, prefs: state.prefs, ...aiArgs() });
       draft.title = draft.ai.title; draft.anchor = draft.ai.anchor; draft.location = draft.ai.location;
       draft.travelMin = draft.ai.travelMin; draft.deadline = draft.ai.deadline; draft.hints = [];
     } catch (e) {
@@ -485,11 +485,11 @@ async function saveEdit() {
     const travel = t.steps.find((x) => x.kind === 'travel');
     const prevTravel = t._prevTravel; delete t._prevTravel;
     if (travel && prevTravel != null && t.travelMin !== prevTravel) t.steps = resizeStep(t.steps, travel.id, Math.round(t.travelMin * 1.2));
-  } else if (state.settings.aiKey) {
-    closeSheets(); toast('Asking Claude to replan…');
+  } else if (aiEnabled()) {
+    closeSheets(); toast('Asking the planner to redo this…');
     const desc = `${t.title}${t.anchor ? ` at ${new Date(t.anchor).toLocaleString(undefined, { weekday: 'long', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : ' (no time yet)'}${t.location ? ` at ${t.location}` : ''}${t.away && t.travelMin ? `, ${t.travelMin} minutes away` : ''}${t.getReady ? ', I need to shower and get ready first' : ''}${t.summary ? `. Earlier plan summary: ${t.summary}` : ''}`;
     try {
-      const ai = await planWithAI({ text: desc, prefs: state.prefs, apiKey: state.settings.aiKey });
+      const ai = await planWithAI({ text: desc, prefs: state.prefs, ...aiArgs() });
       t.source = 'ai'; t.repeat = ai.repeat; t.summary = ai.summary;
       t.steps = t.anchor && ai.anchor && ai.anchor !== t.anchor ? shiftSteps(ai.steps, new Date(t.anchor) - new Date(ai.anchor)) : ai.steps;
     } catch (e) { toast(`AI planner: ${e.message} Used built-in rules.`); t.source = 'rules'; t.steps = replan(t, state.prefs); }
@@ -592,14 +592,34 @@ $('exportBtn').addEventListener('click', () => {
 });
 $('wipeBtn').addEventListener('click', () => { if (confirm('Delete every task and reset settings on this phone?')) { store.wipe(); closeSheets(); } });
 $('notifBtn').addEventListener('click', enableNotifications);
+function aiEnabled() { return !!(state.settings.aiEndpoint || state.settings.aiKey); }
+function aiArgs() { return { endpoint: state.settings.aiEndpoint || '', token: state.settings.aiToken || '', apiKey: state.settings.aiKey || '' }; }
+$('aiEndpoint').addEventListener('change', () => {
+  let u = $('aiEndpoint').value.trim();
+  if (u && !/^https?:\/\//.test(u)) u = (/^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|[^/]+\.local)/i.test(u) ? 'http://' : 'https://') + u;
+  state.settings.aiEndpoint = u; $('aiEndpoint').value = u; store.save(); renderAiStatus();
+  if (u) testServer(u);
+});
+$('aiToken').addEventListener('change', () => { state.settings.aiToken = $('aiToken').value.trim(); store.save(); if (state.settings.aiEndpoint) testServer(state.settings.aiEndpoint); });
 $('aiKey').addEventListener('change', () => {
   const k = $('aiKey').value.trim();
   if (k && !/^sk-ant-/.test(k)) { toast('That doesn’t look like an Anthropic key (starts with sk-ant-).'); }
   state.settings.aiKey = k; store.save(); renderAiStatus();
-  toast(k ? 'AI planning is on' : 'AI planning is off — using built-in rules');
 });
+async function testServer(u) {
+  const el = $('aiStatus');
+  el.textContent = 'Checking your server…';
+  try {
+    const r = await fetch(u.replace(/\/+$/, '').replace(/\/plan$/, '') + '/health');
+    const h = await r.json();
+    if (!h.ok) throw new Error('not a Runway server');
+    el.textContent = `Connected — ${h.provider === 'ollama' ? 'local model' : 'Claude'} (${h.model}) on your server${h.auth && !state.settings.aiToken ? '. It wants a password — enter it below.' : '.'}`;
+  } catch (e) {
+    el.textContent = 'Can’t reach that server. Check the URL, that it’s running, and that it’s reachable from this phone (see backend/README.md).';
+  }
+}
 function renderAiStatus() {
-  $('aiStatus').textContent = state.settings.aiKey ? `On — plans come from Claude (${AI_MODEL}). The key stays on this phone.` : 'Off — plans come from the built-in rules. Paste a key to turn on real understanding of what you say.';
+  $('aiStatus').textContent = state.settings.aiEndpoint ? 'On — plans come from your Runway server.' : state.settings.aiKey ? `On — plans come from Claude (${AI_MODEL}) directly. The key stays on this phone.` : 'Off — plans come from the built-in rules. Connect a server or paste a key to turn on real understanding of what you say.';
 }
 
 function openSettings() {
@@ -615,6 +635,8 @@ function openSettings() {
     grid.appendChild(box);
   }
   $('aiKey').value = state.settings.aiKey || '';
+  $('aiEndpoint').value = state.settings.aiEndpoint || '';
+  $('aiToken').value = state.settings.aiToken || '';
   renderAiStatus();
   renderNotifStatus();
   renderAccount();

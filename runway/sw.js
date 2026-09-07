@@ -1,6 +1,6 @@
 // Runway service worker: offline shell + notification click handling.
-const CACHE = 'runway-v2';
-const ASSETS = ['./', './index.html', './styles.css', './app.js', './planner.js', './nlp.js', './ai.js', './store.js', './firebase-config.js', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png'];
+const CACHE = 'runway-v3';
+const ASSETS = ['./', './index.html', './styles.css', './app.js', './planner.js', './nlp.js', './ai.js', './plan-contract.js', './store.js', './firebase-config.js', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));

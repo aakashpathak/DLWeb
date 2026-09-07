@@ -129,8 +129,13 @@ then bump the version in Xcode (App → General → Version) and repeat Stage C 
 >
 > Built for ADHD brains that plan the event but not the transitions.
 
-## Part 3 — AI planning (later)
+## Part 3 — AI planning
 
-Settings has an API key field that is saved on the phone and currently unused. When you're ready,
-send the key and we'll point `planner.js` at a small server that calls Claude to break down unusual tasks.
-Do **not** paste API keys into the repo.
+Runway plans with a real model when you connect one. Two ways, in Settings → AI planning:
+
+1. **Runway server (recommended).** Run the small server in `backend/` on any computer — your spare
+   one is perfect. It holds the API key and can use **Claude** or a **local model** (free, private).
+   Full step-by-step, including how the phone reaches it: `backend/README.md`.
+2. **Direct key (quick test).** Paste an Anthropic API key into the app. Fine for you; not for the public.
+
+Without either, the built-in rules make a rougher plan. Never paste API keys into the repo.

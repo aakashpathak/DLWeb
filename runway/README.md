@@ -32,7 +32,9 @@ is connected (see `SETUP.md`).
 | `store.js` | localStorage now; Firebase Auth + Firestore sync when configured. |
 | `firebase-config.js` | Paste your Firebase web config here to turn on accounts. |
 | `sw.js`, `manifest.webmanifest`, `icons/` | Installable app: offline shell, home-screen icon. |
-| `tests/planner.test.mjs` | `node --test tests/` — 13 tests on parsing and planning. |
+| `plan-contract.js`, `ai.js` | Shared plan schema/prompt/normalizer, and the phone-side client for the server or the Claude API. |
+| `backend/` | The planning server (Node, one file). Claude or local model. |
+| `tests/*.test.mjs` | `node --test tests/*.test.mjs` — 26 tests on parsing, planning, the AI client and the contract. |
 | `tests/make-icons.mjs` | Regenerates the icons (no dependencies). |
 
 ## Design decisions (for ADHD)
@@ -46,11 +48,18 @@ is connected (see `SETUP.md`).
 - **No time yet is fine.** The app breaks the logistics into tiny steps instead of nagging for a date.
 - **Alerts even when closed.** "Calendar" adds the plan to Apple/Google Calendar with a *Leave now* alarm.
 
-## AI planning (later)
+## AI planning
 
-Plans currently come from on-device rules in `planner.js`. Settings has an API-key field that
-is stored locally and unused for now; the planner exposes `buildPlan(task, prefs)` so an
-LLM-backed planner can be swapped in behind the same interface.
+Three tiers, picked in Settings → AI planning:
+
+| Tier | Where the thinking happens | Quality |
+| --- | --- | --- |
+| Built-in rules (`planner.js`) | On the phone, no network | Rough: keyword templates, ignores nuance |
+| **Runway server** (`backend/`) | Your computer → Claude API **or** a local model via Ollama | Best. Reads every constraint you said. Key never on the phone |
+| Direct API key | Phone → Claude API | Same quality as server + Claude, for quick personal tests |
+
+The plan shape, prompt, and normalizer are shared in `plan-contract.js` so all tiers produce the same
+kind of plan. See `backend/README.md` for the 15-minute setup on a spare computer.
 
 ## Development
 

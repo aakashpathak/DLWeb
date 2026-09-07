@@ -81,3 +81,22 @@ test('nextOccurrence rolls a weekly task forward 7 days with fresh state', () =>
   assert.equal(new Date(n.steps[0].startAt).getDate(), 18);
   assert.equal(nextOccurrence({ ...t, repeat: 'none' }), null);
 });
+
+test('server mode posts to {url}/plan with the password and accepts the plan', async () => {
+  const serverPlan = { title: 'Dentist', anchor: iso(8), deadline: null, location: null, travelMin: 45, repeat: 'none', summary: 'Wake 5:30', questions: [],
+    steps: [{ id: 'x1', title: 'Wake up', durationMin: 15, startAt: iso(5, 30), kind: 'wake', nightBefore: false, done: false }, { id: 'x2', title: 'Dentist', durationMin: 60, startAt: iso(8), kind: 'anchor', nightBefore: false, done: false }] };
+  mockFetch({ plan: serverPlan, model: 'qwen2.5:7b', provider: 'ollama' });
+  const plan = await planWithAI({ text: 'dentist', prefs: {}, endpoint: 'https://abc.trycloudflare.com/', token: 'pw', now: day(15) });
+  assert.equal(mockFetch.last.url, 'https://abc.trycloudflare.com/plan');
+  assert.equal(mockFetch.last.headers.authorization, 'Bearer pw');
+  assert.equal(mockFetch.last.opts.text, 'dentist');
+  assert.equal(mockFetch.last.opts.tz, Intl.DateTimeFormat().resolvedOptions().timeZone);
+  assert.equal(plan.provider, 'ollama');
+  assert.equal(plan.anchor, iso(8));
+  assert.equal(plan.steps.find((s) => s.kind === 'anchor').title, 'Dentist');
+});
+
+test('server errors are shown in plain words', async () => {
+  mockFetch({ error: 'Wrong server password.' }, 401);
+  await assert.rejects(() => planWithAI({ text: 'x', prefs: {}, endpoint: 'https://s', token: 'bad' }), /Wrong server password/);
+});

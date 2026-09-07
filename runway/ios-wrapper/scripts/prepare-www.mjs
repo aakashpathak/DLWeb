@@ -8,7 +8,7 @@ const src = join(here, '..', '..');
 const out = join(here, '..', 'www');
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
-for (const f of ['index.html', 'styles.css', 'app.js', 'planner.js', 'nlp.js', 'ai.js', 'store.js', 'firebase-config.js', 'manifest.webmanifest', 'sw.js', 'icons']) {
+for (const f of ['index.html', 'styles.css', 'app.js', 'planner.js', 'nlp.js', 'ai.js', 'plan-contract.js', 'store.js', 'firebase-config.js', 'manifest.webmanifest', 'sw.js', 'icons']) {
   if (existsSync(join(src, f))) cpSync(join(src, f), join(out, f), { recursive: true });
 }
 // The service worker is a browser thing; the native shell serves files itself.
