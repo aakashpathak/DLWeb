@@ -2,17 +2,22 @@
   "name": "runway-ios",
   "version": "0.1.0",
   "private": true,
-  "description": "Native iOS shell for Runway (Capacitor). Loads the live web app.",
+  "description": "Native iOS shell for Runway (Capacitor). Bundles the web app, adds native speech recognition and local notifications.",
   "scripts": {
-    "add-ios": "cap add ios",
-    "sync": "cap sync",
-    "open": "cap open ios"
+    "prepare-www": "node scripts/prepare-www.mjs",
+    "setup": "npm run prepare-www && npx cap add ios && node scripts/patch-ios.mjs && npx @capacitor/assets generate --ios --iconBackgroundColor '#3B5BDB' --splashBackgroundColor '#F6F5F2' && npx cap sync ios",
+    "update": "npm run prepare-www && npx cap sync ios",
+    "open": "npx cap open ios"
   },
   "dependencies": {
-    "@capacitor/core": "^6.1.0",
-    "@capacitor/ios": "^6.1.0"
+    "@capacitor-community/speech-recognition": "^6.0.1",
+    "@capacitor/app": "^6.0.1",
+    "@capacitor/core": "^6.1.2",
+    "@capacitor/ios": "^6.1.2",
+    "@capacitor/local-notifications": "^6.1.0"
   },
   "devDependencies": {
-    "@capacitor/cli": "^6.1.0"
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^6.1.2"
   }
 }

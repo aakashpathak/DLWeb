@@ -5,6 +5,9 @@ import * as store from './store.js';
 
 const $ = (id) => document.getElementById(id);
 const state = store.state;
+// Native iOS shell (Capacitor) — gives us real speech recognition and real notifications.
+const NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+const NP = NATIVE ? (window.Capacitor.Plugins || {}) : {};
 const MIN = 60000;
 const openIds = new Set();
 let draft = null;          // parsed task being reviewed
@@ -22,7 +25,8 @@ $('todayLabel').textContent = new Date().toLocaleDateString(undefined, { weekday
 $('version').textContent = 'Runway 0.1 · plans run on your phone';
 setInterval(tick, 20000);
 tick();
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+if (!NATIVE && 'serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+if (NATIVE) { store.subscribe(scheduleNativeNotifications); scheduleNativeNotifications(); }
 store.initCloud();
 
 // ---------------------------------------------------------------------------
@@ -429,7 +433,36 @@ function saveEdit() {
 // ---------------------------------------------------------------------------
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 function toggleMic() { listening ? stopMic() : startMic(); }
+let nativeSilenceTimer = null;
+async function startMicNative() {
+  const SRN = NP.SpeechRecognition;
+  try {
+    const { available } = await SRN.available();
+    if (!available) throw new Error('unavailable');
+    const perm = await SRN.requestPermissions();
+    if (perm.speechRecognition && perm.speechRecognition !== 'granted') {
+      $('listenStatus').textContent = 'Microphone blocked. Allow it in Settings → Runway, or just type.'; return;
+    }
+    await SRN.removeAllListeners();
+    let heard = '';
+    const finish = () => { clearTimeout(nativeSilenceTimer); stopMic(); if (heard.trim()) { $('listenStatus').textContent = 'Got it. Check it, then Next.'; setTimeout(goReview, 250); } };
+    SRN.addListener('partialResults', ({ matches }) => {
+      if (matches && matches[0]) { heard = matches[0]; $('taskInput').value = heard; }
+      clearTimeout(nativeSilenceTimer);
+      nativeSilenceTimer = setTimeout(finish, 1800); // 1.8 s of silence after speech = done
+    });
+    SRN.addListener('listeningState', ({ status }) => { if (status === 'stopped' && listening) finish(); });
+    listening = true; $('micToggle').classList.add('on');
+    $('listenStatus').textContent = 'Listening… say the task, when, and how far.';
+    const res = await SRN.start({ language: navigator.language || 'en-US', maxResults: 1, partialResults: true, popup: false });
+    if (res && res.matches && res.matches[0] && !heard) { heard = res.matches[0]; $('taskInput').value = heard; finish(); }
+  } catch (e) {
+    listening = false; $('micToggle').classList.remove('on');
+    $('listenStatus').textContent = 'Voice isn’t available right now — just type.'; $('taskInput').focus();
+  }
+}
 function startMic() {
+  if (NATIVE && NP.SpeechRecognition) return startMicNative();
   if (!SR) { $('listenStatus').textContent = 'Voice isn’t available in this browser — just type it.'; $('taskInput').focus(); return; }
   try {
     recognition = new SR();
@@ -462,6 +495,8 @@ function startMic() {
 }
 function stopMic() {
   if (recognition) { try { recognition.stop(); } catch (e) { /* ignore */ } }
+  if (NATIVE && NP.SpeechRecognition && listening) { try { NP.SpeechRecognition.stop(); } catch (e) { /* ignore */ } }
+  clearTimeout(nativeSilenceTimer);
   listening = false; $('micToggle').classList.remove('on');
 }
 
@@ -542,6 +577,13 @@ function friendlyAuthError(e) {
 // Reminders (local, while the app is installed/open)
 // ---------------------------------------------------------------------------
 async function enableNotifications() {
+  if (NATIVE && NP.LocalNotifications) {
+    const p = await NP.LocalNotifications.requestPermissions();
+    state.settings.notifications = p.display === 'granted';
+    store.save(); renderNotifStatus();
+    if (state.settings.notifications) toast('Reminders on. You’ll get a nudge at every step.');
+    return;
+  }
   if (!('Notification' in window)) { $('notifStatus').textContent = 'Reminders need the app on your home screen (Share → Add to Home Screen), then come back here.'; return; }
   const perm = await Notification.requestPermission();
   state.settings.notifications = perm === 'granted';
@@ -549,6 +591,12 @@ async function enableNotifications() {
   if (perm === 'granted') notify('Runway reminders are on', 'You’ll get a nudge when it’s time to move.');
 }
 function renderNotifStatus() {
+  if (NATIVE && NP.LocalNotifications) {
+    const on = !!state.settings.notifications;
+    $('notifStatus').textContent = on ? 'On. Runway sends a notification at every step — wake up, leave now — even when the app is closed.' : 'Off. Turn on to get a nudge at every step, even when the app is closed.';
+    $('notifBtn').hidden = on;
+    return;
+  }
   const supported = 'Notification' in window;
   const on = supported && Notification.permission === 'granted' && state.settings.notifications;
   $('notifStatus').textContent = !supported
@@ -557,9 +605,45 @@ function renderNotifStatus() {
     : Notification.permission === 'denied' ? 'Blocked in system settings. Enable notifications for Runway there.' : 'Off.';
   $('notifBtn').hidden = on;
 }
+// Native: (re)schedule real iOS notifications for every upcoming step in the next 7 days.
+let nativeSchedTimer = null;
+function scheduleNativeNotifications() {
+  if (!(NATIVE && NP.LocalNotifications)) return;
+  clearTimeout(nativeSchedTimer);
+  nativeSchedTimer = setTimeout(async () => {
+    const LN = NP.LocalNotifications;
+    try {
+      const pending = await LN.getPending();
+      if (pending.notifications && pending.notifications.length) await LN.cancel({ notifications: pending.notifications.map((n) => ({ id: n.id })) });
+      if (!state.settings.notifications) return;
+      const now = Date.now(), horizon = now + 7 * 24 * 60 * MIN;
+      const list = [];
+      for (const t of state.tasks) {
+        if (t.done) continue;
+        for (const s of t.steps || []) {
+          if (!s.startAt || s.done) continue;
+          const at = new Date(s.startAt).getTime();
+          if (at <= now || at > horizon) continue;
+          list.push({
+            id: hash32(s.id), sound: 'default',
+            title: s.kind === 'travel' ? `Leave now · ${t.title}` : s.kind === 'wake' ? `Wake up · ${t.title}` : s.kind === 'anchor' ? t.title : s.title,
+            body: s.kind === 'anchor' ? 'You should be there now.' : `${fmtTime(at)} · for “${t.title}”`,
+            schedule: { at: new Date(at), allowWhileIdle: true },
+            extra: { taskId: t.id },
+          });
+        }
+      }
+      list.sort((a, b) => a.schedule.at - b.schedule.at);
+      if (list.length) await LN.schedule({ notifications: list.slice(0, 60) }); // iOS caps pending notifications at 64
+    } catch (e) { /* never break the UI over a notification */ }
+  }, 600);
+}
+function hash32(str) { let h = 0; for (let i = 0; i < str.length; i++) h = (Math.imul(31, h) + str.charCodeAt(i)) | 0; return Math.abs(h) || 1; }
+
 const notified = new Set();
 function tick() {
   const now = Date.now();
+  if (NATIVE) { render(); return; }
   if (!(state.settings.notifications && 'Notification' in window && Notification.permission === 'granted')) { render(); return; }
   for (const t of state.tasks) {
     if (t.done) continue;
