@@ -5,6 +5,7 @@ on:
     branches:
       - master
       - claude/continuous-translation-app-lmjgpy
+      - claude/adhd-task-planning-app-8iudou
   workflow_dispatch:
 
 permissions:
