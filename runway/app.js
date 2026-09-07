@@ -2,6 +2,7 @@
 import { parseTask } from './nlp.js';
 import { buildPlan, replan, classify, keyTimes, fmtTime, fmtDay, findOverlaps, planSpan, DEFAULT_PREFS } from './planner.js';
 import * as store from './store.js';
+import { planWithAI, shiftSteps, resizeStep, nextOccurrence, AI_MODEL } from './ai.js';
 
 const $ = (id) => document.getElementById(id);
 const state = store.state;
@@ -125,6 +126,7 @@ function taskCard(t, now, overlapWith) {
     else if (kt.startAt) p.push(`<span class="pill">▶ Start ${fmtTime(kt.startAt)}</span>`);
     if (kt.leaveAt) p.push(`<span class="pill leave">🚗 Leave ${fmtTime(kt.leaveAt)}</span>`);
     if (overlapWith && overlapWith.length) p.push(`<span class="pill warn">⚠️ Overlaps “${esc(overlapWith[0].title)}”</span>`);
+    if (t.repeat && t.repeat !== 'none') p.push(`<span class="pill">↻ ${esc(t.repeat)}</span>`);
     pills = p.join('');
   } else {
     when = `${steps.length - doneCount} tiny steps · ~${totalMin(steps.filter((s) => !s.done))} min total${t.deadline ? ` · by ${esc(fmtDay(new Date(t.deadline), now))}` : ''}`;
@@ -153,7 +155,7 @@ function taskCard(t, now, overlapWith) {
     box.className = 'steps';
     if (t.anchor) {
       const hint = document.createElement('div'); hint.className = 'steps-hint';
-      hint.textContent = 'Tap a duration to fix it — the whole plan shifts.';
+      hint.textContent = (t.source === 'ai' && t.summary ? `✦ ${t.summary} · ` : '') + 'Tap a duration to fix it — the whole plan shifts.';
       box.appendChild(hint);
     }
     let lastDay = null;
@@ -166,7 +168,7 @@ function taskCard(t, now, overlapWith) {
     }
     if (t.anchor && steps.length) {
       const tot = document.createElement('div'); tot.className = 'day-divider';
-      tot.textContent = `Total runway: ${humanDur(totalMin(steps.filter((s) => s.kind !== 'anchor' && !s.title.startsWith('Night before'))) * MIN)} before you’re there`;
+      tot.textContent = `Total runway: ${humanDur(totalMin(steps.filter((s) => s.kind !== 'anchor' && !s.nightBefore && !s.title.startsWith('Night before') && s.startAt && s.startAt < t.anchor)) * MIN)} before you’re there`;
       box.appendChild(tot);
     }
     el.appendChild(box);
@@ -182,7 +184,7 @@ function taskCard(t, now, overlapWith) {
       const act = e.target.closest('[data-act]')?.dataset.act;
       if (act === 'edit') openEdit(t.id);
       if (act === 'cal') openCalendar(t);
-      if (act === 'done') { t.done = !t.done; t.updatedAt = Date.now(); if (t.done) t.steps.forEach((s) => (s.done = true)); store.save(); toast(t.done ? 'Nice. Done.' : 'Reopened'); }
+      if (act === 'done') { t.done = !t.done; t.updatedAt = Date.now(); if (t.done) { t.steps.forEach((s) => (s.done = true)); spawnRepeat(t); } store.save(); toast(t.done ? 'Nice. Done.' : 'Reopened'); }
       if (act === 'delete') { if (confirm(`Delete “${t.title}”?`)) { state.tasks = state.tasks.filter((x) => x.id !== t.id); store.save(); } }
     });
     el.appendChild(tools);
@@ -199,12 +201,12 @@ function stepRow(t, s, now) {
   row.className = `step ${s.kind} ${s.done ? 'done' : ''} ${isNow ? 'now' : ''} ${past ? 'past' : ''}`;
   row.innerHTML = `
     <button class="chk" aria-label="Mark done"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg></button>
-    <div><div class="st">${esc(s.title)}</div><div class="sm">${s.kind === 'anchor' ? `<button class="dur" data-dur>be there · ${s.durationMin} min</button>` : s.prefKey ? `<button class="dur" data-dur>${s.durationMin} min ✎</button>` : `${s.durationMin} min`}${isNow ? ' · <b>now</b>' : ''}</div></div>
+    <div><div class="st">${esc(s.title)}</div><div class="sm">${s.kind === 'anchor' ? `<button class="dur" data-dur>be there · ${s.durationMin} min</button>` : (s.prefKey || t.source === 'ai') && s.startAt ? `<button class="dur" data-dur>${s.durationMin} min ✎</button>` : `${s.durationMin} min`}${isNow ? ' · <b>now</b>' : ''}</div></div>
     <div class="tm">${start ? fmtTime(start) : ''}</div>
     ${s.action === 'settime' ? `<button class="btn primary sm act" data-settime>Set the time</button>` : ''}`;
   row.querySelector('.chk').addEventListener('click', () => {
     s.done = !s.done; t.updatedAt = Date.now();
-    if (t.steps.every((x) => x.done)) { t.done = true; toast('All steps done. 🎉'); }
+    if (t.steps.every((x) => x.done)) { t.done = true; toast('All steps done. 🎉'); spawnRepeat(t); }
     store.save();
   });
   row.querySelector('[data-settime]')?.addEventListener('click', () => openEdit(t.id, true));
@@ -221,6 +223,12 @@ $('durSave').addEventListener('click', () => {
   if (!durCtx) return;
   const { t, s } = durCtx;
   const val = Math.max(0, Number($('durValue').value) || 0);
+  if (t.source === 'ai') {
+    t.steps = resizeStep(t.steps, s.id, val);
+    if ($('durRemember').checked && s.prefKey in state.prefs) state.prefs[s.prefKey] = val;
+    t.updatedAt = Date.now(); store.save(); closeSheets();
+    const k = keyTimes(t); toast(k.leaveAt ? `Updated — leave by ${fmtTime(k.leaveAt)}.` : 'Updated.'); return;
+  }
   t.overrides = t.overrides || {};
   if (s.prefKey === 'travel') t.travelMin = val;
   else t.overrides[s.prefKey] = val;
@@ -239,11 +247,11 @@ $('durMinus').addEventListener('click', () => { $('durValue').value = Math.max(0
 $('durPlus').addEventListener('click', () => { $('durValue').value = (Number($('durValue').value) || 0) + 5; });
 function openDuration(t, s) {
   durCtx = { t, s };
-  const nice = (PREF_LABELS[s.prefKey] || [s.title.replace(/ \(.*\)$/, '').replace(/ —.*$/, '')])[0];
+  const nice = (PREF_LABELS[s.prefKey] || [s.title.replace(/ \(.*\)$/, '').replace(/ —.*$/, '').slice(0, 40)])[0];
   const label = s.kind === 'anchor' ? `How long is “${t.title}”?` : s.prefKey === 'travel' ? 'How long is the trip, really?' : `“${nice}” — how long, really?`;
   $('durTitle').textContent = label;
-  $('durValue').value = s.prefKey === 'travel' ? (t.travelMin ?? state.prefs.defaultTravel) : (s.kind === 'anchor' ? s.durationMin : ((t.overrides || {})[s.prefKey] ?? state.prefs[s.prefKey] ?? s.durationMin));
-  const rememberable = s.prefKey in state.prefs || s.prefKey === 'travel';
+  $('durValue').value = t.source === 'ai' ? s.durationMin : s.prefKey === 'travel' ? (t.travelMin ?? state.prefs.defaultTravel) : (s.kind === 'anchor' ? s.durationMin : ((t.overrides || {})[s.prefKey] ?? state.prefs[s.prefKey] ?? s.durationMin));
+  const rememberable = t.source !== 'ai' && (s.prefKey in state.prefs || s.prefKey === 'travel');
   $('durRememberRow').hidden = !rememberable;
   $('durRemember').checked = rememberable && s.prefKey !== 'travel';
   showSheet('durSheet');
@@ -283,6 +291,13 @@ function openCalendar(t) {
 function icsEsc(s) { return String(s).replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/[,;]/g, (c) => '\\' + c); }
 $('calClose').addEventListener('click', closeSheets);
 
+function spawnRepeat(t) {
+  const n = nextOccurrence(t);
+  if (!n || state.tasks.some((x) => x.anchor === n.anchor && x.title === n.title)) return;
+  state.tasks.unshift(n);
+  setTimeout(() => toast(`Next one planned: ${fmtDay(new Date(n.anchor))} ${fmtTime(new Date(n.anchor))}`), 1200);
+}
+
 // ---------------------------------------------------------------------------
 // Add flow
 // ---------------------------------------------------------------------------
@@ -316,18 +331,39 @@ function closeSheets() {
   $('sheetBackdrop').hidden = true;
 }
 
-function goReview() {
+let planning = false;
+async function goReview() {
   const text = $('taskInput').value.trim();
-  if (!text) { $('taskInput').focus(); return; }
+  if (!text || planning) { if (!text) $('taskInput').focus(); return; }
   stopMic();
   draft = parseTask(text);
+  draft.raw = text; draft.ai = null;
+  if (state.settings.aiKey) {
+    planning = true;
+    $('nextAdd').disabled = true; $('nextAdd').textContent = 'Planning…';
+    $('listenStatus').innerHTML = '<span class="spin"></span> Claude is reading the whole thing and planning backwards…';
+    try {
+      draft.ai = await planWithAI({ text, prefs: state.prefs, apiKey: state.settings.aiKey });
+      draft.title = draft.ai.title; draft.anchor = draft.ai.anchor; draft.location = draft.ai.location;
+      draft.travelMin = draft.ai.travelMin; draft.deadline = draft.ai.deadline; draft.hints = [];
+    } catch (e) {
+      toast(`AI planner: ${e.message} Using built-in rules.`);
+    } finally {
+      planning = false; $('nextAdd').disabled = false; $('nextAdd').textContent = 'Next';
+      $('listenStatus').textContent = 'Tap the mic and talk, or type.';
+    }
+  }
+  fillReview();
+}
+function fillReview() {
   const cat = classify(draft.title);
   $('rvTitle').value = draft.title;
   const away = cat.away !== false && (cat.away === true || draft.travelMin != null || !!draft.location || cat.id === 'generic' ? cat.away !== null : true);
   $('rvAway').checked = cat.away === null ? (draft.travelMin != null || !!draft.location) : away;
   $('rvReady').checked = !!cat.getReady;
   $('rvWhere').value = draft.location || '';
-  $('rvTravel').value = draft.travelMin != null ? draft.travelMin : state.prefs.defaultTravel;
+  $('rvTravel').value = draft.travelMin != null ? draft.travelMin : (draft.ai ? '' : state.prefs.defaultTravel);
+  if (draft.ai) $('rvAway').checked = draft.ai.travelMin != null;
   setWhen('rv', draft.anchor);
   const hint = [];
   if (draft.deadline) hint.push(`Deadline ${fmtDay(new Date(draft.deadline))} — you’ll get the logistics steps first, then set the real time.`);
@@ -336,6 +372,16 @@ function goReview() {
   if (draft.hints.includes('no-time')) hint.push('Heard the day but no time — set it, or tap “No time yet”.');
   if (draft.hints.includes('vague-time')) hint.push('Set the exact time if you have it.');
   if (!draft.anchor) hint.push('No time yet? Fine — Runway will give you the logistics steps first.');
+  if (draft.ai) {
+    hint.length = 0;
+    if (draft.ai.questions.length) hint.push(draft.ai.questions.join(' '));
+    $('rvSummary').hidden = false;
+    $('rvSummary').innerHTML = `<b>Claude’s plan:</b> ${esc(draft.ai.summary)}${draft.ai.repeat !== 'none' ? ` · repeats ${esc(draft.ai.repeat)}` : ''}<br><span class="muted small" style="margin:0">${draft.ai.steps.length} steps. Change the time here and the whole plan moves with it.</span>`;
+    document.querySelector('#stepReview .toggles').hidden = true;
+  } else {
+    $('rvSummary').hidden = true;
+    document.querySelector('#stepReview .toggles').hidden = false;
+  }
   $('rvWhenHint').textContent = hint.join(' ');
   syncAway('rv');
   showStep('stepReview');
@@ -374,7 +420,17 @@ function saveNew() {
     travelMin: $('rvAway').checked ? Number($('rvTravel').value || 0) : 0,
     deadline: draft.deadline || null,
   };
-  task.steps = buildPlan(task, state.prefs);
+  if (draft.ai) {
+    task.source = 'ai'; task.repeat = draft.ai.repeat; task.summary = draft.ai.summary;
+    task.travelMin = draft.ai.travelMin; task.away = draft.ai.travelMin != null;
+    let steps = draft.ai.steps;
+    if (task.anchor && draft.ai.anchor && task.anchor !== draft.ai.anchor) steps = shiftSteps(steps, new Date(task.anchor) - new Date(draft.ai.anchor));
+    if (task.anchor && !draft.ai.anchor) { task.source = 'rules'; steps = buildPlan(task, state.prefs); }
+    if (!task.anchor && draft.ai.anchor) { steps = steps.map((x) => ({ ...x, startAt: null })); }
+    task.steps = steps;
+  } else {
+    task.steps = buildPlan(task, state.prefs);
+  }
   state.tasks.unshift(task);
   openIds.clear(); openIds.add(task.id);
   store.save();
@@ -411,8 +467,9 @@ function openEdit(id, focusTime) {
   showSheet('editSheet');
   if (focusTime) setTimeout(() => $('edWhen').focus(), 60);
 }
-function saveEdit() {
+async function saveEdit() {
   const t = state.tasks.find((x) => x.id === editingId); if (!t) return;
+  t._prevAnchor = t.anchor; t._prevTravel = t.travelMin;
   t.title = $('edTitle').value.trim() || t.title;
   t.anchor = readWhen('ed');
   t.away = $('edAway').checked;
@@ -421,7 +478,25 @@ function saveEdit() {
   t.travelMin = t.away ? Number($('edTravel').value || 0) : 0;
   t.updatedAt = Date.now();
   t.done = false;
-  t.steps = replan(t, state.prefs);
+  const prevAnchor = t._prevAnchor; delete t._prevAnchor;
+  if (t.source === 'ai' && t.anchor && prevAnchor) {
+    // Same plan, moved in time. Travel change resizes the travel step.
+    t.steps = shiftSteps(t.steps, new Date(t.anchor) - new Date(prevAnchor));
+    const travel = t.steps.find((x) => x.kind === 'travel');
+    const prevTravel = t._prevTravel; delete t._prevTravel;
+    if (travel && prevTravel != null && t.travelMin !== prevTravel) t.steps = resizeStep(t.steps, travel.id, Math.round(t.travelMin * 1.2));
+  } else if (state.settings.aiKey) {
+    closeSheets(); toast('Asking Claude to replan…');
+    const desc = `${t.title}${t.anchor ? ` at ${new Date(t.anchor).toLocaleString(undefined, { weekday: 'long', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : ' (no time yet)'}${t.location ? ` at ${t.location}` : ''}${t.away && t.travelMin ? `, ${t.travelMin} minutes away` : ''}${t.getReady ? ', I need to shower and get ready first' : ''}${t.summary ? `. Earlier plan summary: ${t.summary}` : ''}`;
+    try {
+      const ai = await planWithAI({ text: desc, prefs: state.prefs, apiKey: state.settings.aiKey });
+      t.source = 'ai'; t.repeat = ai.repeat; t.summary = ai.summary;
+      t.steps = t.anchor && ai.anchor && ai.anchor !== t.anchor ? shiftSteps(ai.steps, new Date(t.anchor) - new Date(ai.anchor)) : ai.steps;
+    } catch (e) { toast(`AI planner: ${e.message} Used built-in rules.`); t.source = 'rules'; t.steps = replan(t, state.prefs); }
+  } else {
+    t.source = 'rules';
+    t.steps = replan(t, state.prefs);
+  }
   openIds.add(t.id);
   store.save(); closeSheets();
   const kt = keyTimes(t);
@@ -517,7 +592,15 @@ $('exportBtn').addEventListener('click', () => {
 });
 $('wipeBtn').addEventListener('click', () => { if (confirm('Delete every task and reset settings on this phone?')) { store.wipe(); closeSheets(); } });
 $('notifBtn').addEventListener('click', enableNotifications);
-$('aiKey').addEventListener('change', () => { state.settings.aiKey = $('aiKey').value.trim(); store.save(); toast(state.settings.aiKey ? 'Key saved on this phone' : 'Key removed'); });
+$('aiKey').addEventListener('change', () => {
+  const k = $('aiKey').value.trim();
+  if (k && !/^sk-ant-/.test(k)) { toast('That doesn’t look like an Anthropic key (starts with sk-ant-).'); }
+  state.settings.aiKey = k; store.save(); renderAiStatus();
+  toast(k ? 'AI planning is on' : 'AI planning is off — using built-in rules');
+});
+function renderAiStatus() {
+  $('aiStatus').textContent = state.settings.aiKey ? `On — plans come from Claude (${AI_MODEL}). The key stays on this phone.` : 'Off — plans come from the built-in rules. Paste a key to turn on real understanding of what you say.';
+}
 
 function openSettings() {
   const grid = $('prefsGrid'); grid.innerHTML = '';
@@ -532,6 +615,7 @@ function openSettings() {
     grid.appendChild(box);
   }
   $('aiKey').value = state.settings.aiKey || '';
+  renderAiStatus();
   renderNotifStatus();
   renderAccount();
   showSheet('settingsSheet');

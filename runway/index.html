@@ -14,7 +14,7 @@
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icons/icon-180.png" />
   <link rel="icon" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="styles.css?v=1" />
+  <link rel="stylesheet" href="styles.css?v=2" />
 </head>
 <body>
   <div id="app" class="app">
@@ -87,6 +87,7 @@
         </div>
         <div class="hint" id="rvWhenHint"></div>
       </div>
+      <div class="ai-summary" id="rvSummary" hidden></div>
       <div class="field two">
         <label>
           <span>Where?</span>
@@ -124,9 +125,10 @@
       <h3>Account</h3>
       <div id="accountBox" class="account"></div>
 
-      <h3>AI planning <span class="badge">later</span></h3>
-      <p class="muted">Right now plans come from Runway’s built-in rules and run entirely on your phone. When you’re ready, an API key goes here and the planner gets smarter.</p>
-      <label class="field"><span>API key (optional)</span><input type="password" id="aiKey" placeholder="not required" autocomplete="off" /></label>
+      <h3>AI planning</h3>
+      <p class="muted" id="aiStatus"></p>
+      <label class="field"><span>Anthropic API key</span><input type="password" id="aiKey" placeholder="sk-ant-…" autocomplete="off" /></label>
+      <p class="muted small">Get one at console.anthropic.com → API keys. With a key, Runway sends what you say to Claude, which reads every detail (“takes me three hours”, “leave by six”) and plans backwards. Without one, the built-in rules do a rougher job.</p>
 
       <h3>Data</h3>
       <div class="row-btns">
@@ -197,6 +199,6 @@
 
   <div class="toast" id="toast" hidden></div>
 
-  <script type="module" src="app.js?v=1"></script>
+  <script type="module" src="app.js?v=2"></script>
 </body>
 </html>
