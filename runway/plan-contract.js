@@ -1,35 +1,41 @@
-// Runway plan contract — shared by the phone app (browser ESM) and the backend
-// (Node ESM). One schema, one prompt, one normalizer, so Claude on the API and
-// a small local model on a spare computer produce the same shape of plan.
+// Runway plan contract — shared by the phone app (browser ESM) and the backend (Node ESM).
+//
+// Division of labour, on purpose:
+//   • The model decides WHAT the steps are, in what ORDER, and HOW LONG each takes.
+//   • This file computes every clock time, backwards from the anchor, and enforces
+//     hard constraints ("ready by 9") arithmetically. Models are bad at time math;
+//     code is not. This also lets small/fast models produce good plans.
 
 import { DEFAULT_PREFS } from './planner.js';
 
-export const STEP_KINDS = ['wake', 'prep', 'transition', 'travel', 'buffer', 'anchor', 'research', 'action', 'night_before'];
+export const STEP_KINDS = ['wake', 'prep', 'transition', 'travel', 'buffer', 'anchor', 'research', 'action'];
+const MIN = 60000;
 
 export const PLAN_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['title', 'kind', 'anchor', 'deadline', 'location', 'travelMin', 'repeat', 'summary', 'questions', 'steps'],
+  required: ['title', 'kind', 'anchor', 'finishBy', 'deadline', 'location', 'travelMin', 'repeat', 'summary', 'questions', 'steps'],
   properties: {
-    title: { type: 'string', description: 'Short task name, at most 8 words, no times or durations in it' },
-    kind: { type: 'string', enum: ['timed', 'project'], description: 'timed = there is a moment you must be somewhere or start; project = logistics first, no time yet' },
-    anchor: { type: ['string', 'null'], description: 'Local datetime YYYY-MM-DDTHH:MM when the task itself starts or you must be there. null for projects.' },
-    deadline: { type: ['string', 'null'], description: 'Local datetime YYYY-MM-DDTHH:MM by which a project must be done, else null' },
+    title: { type: 'string', description: 'Task name, max 6 words, no times/durations' },
+    kind: { type: 'string', enum: ['timed', 'project'] },
+    anchor: { type: ['string', 'null'], description: 'YYYY-MM-DDTHH:MM local. The moment the activity itself starts / you must be there. null for project.' },
+    finishBy: { type: ['string', 'null'], description: 'YYYY-MM-DDTHH:MM local. Hard time by which EVERYTHING must be finished, if they said one (e.g. "ready by 9"). Else null.' },
+    deadline: { type: ['string', 'null'], description: 'For projects: date by which it must be done, else null' },
     location: { type: ['string', 'null'] },
-    travelMin: { type: ['integer', 'null'], description: 'One-way travel minutes if the person has to go somewhere, else null' },
+    travelMin: { type: ['integer', 'null'], description: 'One-way travel minutes if going somewhere, else null' },
     repeat: { type: 'string', enum: ['none', 'daily', 'weekdays', 'weekly'] },
-    summary: { type: 'string', description: 'One line the person can remember, e.g. "Wake 5:15 · out the door 6:00 · done 9:00"' },
-    questions: { type: 'array', items: { type: 'string' }, description: 'At most 2 short questions if something important is genuinely unknown, else empty' },
+    summary: { type: 'string', description: 'Max 8 words about the plan, no clock times (the app adds them)' },
+    questions: { type: 'array', items: { type: 'string' }, description: 'Empty unless a vital fact is missing (max 1)' },
     steps: {
       type: 'array',
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['title', 'durationMin', 'startAt', 'kind'],
+        required: ['title', 'durationMin', 'when', 'kind'],
         properties: {
-          title: { type: 'string', description: 'Concrete, short, imperative. Include what to grab or decide.' },
+          title: { type: 'string', description: 'Short, concrete, imperative' },
           durationMin: { type: 'integer', minimum: 0 },
-          startAt: { type: ['string', 'null'], description: 'Local datetime YYYY-MM-DDTHH:MM. Required for timed tasks; null for project steps.' },
+          when: { type: 'string', enum: ['night_before', 'before', 'anchor', 'after'], description: 'before = leads up to the anchor (chronological order); anchor = the activity itself (exactly one); after = follows it' },
           kind: { type: 'string', enum: STEP_KINDS },
         },
       },
@@ -37,55 +43,47 @@ export const PLAN_SCHEMA = {
   },
 };
 
-// A worked example. Frontier models don't need it; 7B local models do.
 const EXAMPLE_IN = 'Dentist Thursday at 8am, it\'s 45 minutes away';
 const EXAMPLE_OUT = {
-  title: 'Dentist', kind: 'timed', anchor: '2026-09-10T08:00', deadline: null, location: null, travelMin: 45, repeat: 'none',
-  summary: 'Wake 5:30 · leave 6:55 · there 7:50', questions: [],
+  title: 'Dentist', kind: 'timed', anchor: '2026-09-10T08:00', finishBy: null, deadline: null, location: null, travelMin: 45, repeat: 'none',
+  summary: 'Early start, drive with traffic pad', questions: [],
   steps: [
-    { title: 'Night before: lay out clothes, insurance card + ID by the door, alarm 5:30', durationMin: 10, startAt: '2026-09-09T21:00', kind: 'night_before' },
-    { title: 'Wake up (alarm + snooze budget)', durationMin: 15, startAt: '2026-09-10T05:30', kind: 'wake' },
-    { title: 'Bathroom, water, meds', durationMin: 10, startAt: '2026-09-10T05:45', kind: 'prep' },
-    { title: 'Shower', durationMin: 20, startAt: '2026-09-10T05:55', kind: 'prep' },
-    { title: 'Get dressed', durationMin: 10, startAt: '2026-09-10T06:15', kind: 'prep' },
-    { title: 'Breakfast (sit down for it)', durationMin: 15, startAt: '2026-09-10T06:25', kind: 'prep' },
-    { title: 'Grab insurance card, ID, list of questions', durationMin: 5, startAt: '2026-09-10T06:40', kind: 'transition' },
-    { title: 'Out the door: shoes, keys, phone, wallet', durationMin: 10, startAt: '2026-09-10T06:45', kind: 'transition' },
-    { title: 'Drive (45 min + 10 min traffic pad)', durationMin: 55, startAt: '2026-09-10T06:55', kind: 'travel' },
-    { title: 'Arrive 10 min early, breathe', durationMin: 10, startAt: '2026-09-10T07:50', kind: 'buffer' },
-    { title: 'Dentist', durationMin: 60, startAt: '2026-09-10T08:00', kind: 'anchor' },
+    { title: 'Lay out clothes, insurance card + ID by the door, set alarm', durationMin: 10, when: 'night_before', kind: 'prep' },
+    { title: 'Wake up (alarm + snooze budget)', durationMin: 15, when: 'before', kind: 'wake' },
+    { title: 'Bathroom, water, meds', durationMin: 10, when: 'before', kind: 'prep' },
+    { title: 'Shower', durationMin: 20, when: 'before', kind: 'prep' },
+    { title: 'Get dressed', durationMin: 10, when: 'before', kind: 'prep' },
+    { title: 'Breakfast (sit down for it)', durationMin: 15, when: 'before', kind: 'prep' },
+    { title: 'Grab insurance card, ID, list of questions', durationMin: 5, when: 'before', kind: 'transition' },
+    { title: 'Out the door: shoes, keys, phone, wallet', durationMin: 10, when: 'before', kind: 'transition' },
+    { title: 'Drive (45 min + traffic pad)', durationMin: 55, when: 'before', kind: 'travel' },
+    { title: 'Arrive early, breathe', durationMin: 10, when: 'before', kind: 'buffer' },
+    { title: 'Dentist', durationMin: 60, when: 'anchor', kind: 'anchor' },
   ],
 };
 
 export function buildSystemPrompt({ prefs, now = new Date(), tz, smallModel = false }) {
   const p = { ...DEFAULT_PREFS, ...(prefs || {}) };
-  const zone = tz || 'the person\'s local time';
-  const nowStr = fmtNow(now, tz);
-  const base = `You are the planner inside Runway, an app for people with ADHD. Their problem: they plan the event but not the transitions, so they are always late. Your job is to turn one spoken request into an honest, backwards-planned timeline.
+  const base = `You plan for Runway, an app for people with ADHD who plan the event but forget the transitions and end up late. Turn one spoken request into steps. You choose the steps, their order and their durations. The app computes all clock times backwards from the anchor, so never do time arithmetic and never put clock times in titles or the summary.
 
-Now: ${nowStr} (${zone}). All datetimes you output are local to that timezone, formatted YYYY-MM-DDTHH:MM.
+Now: ${fmtNow(now, tz)}${tz ? ` (${tz})` : ''}. Datetimes you output are local, YYYY-MM-DDTHH:MM.
 
-How to plan:
-- Read everything the person said and honor every constraint, especially durations they gave ("takes me three hours"), hard boundaries ("leave the house at six", "must be finished by"), and prep they asked for. Their numbers beat the defaults below.
-- Timed task: start from the anchor moment and plan BACKWARDS to the first thing they must do (usually waking up or stopping their current activity). Then plan FORWARD through the activity itself when they gave its duration. Every step gets a startAt; steps are in chronological order; exactly one step has kind "anchor" and its startAt equals anchor.
-- Always include transition time: stop-and-switch, bathroom, shower, dressing, eating if a mealtime is crossed, "grab keys/phone/wallet and what to bring", travel with a traffic pad (~20%), and arriving 10 minutes early. For starts before 11am include a wake-up step with a snooze budget and a "night before" step (kind night_before, at 21:00 the previous day) listing what to lay out and the alarm time.
-- Put wake-up and leave-the-house times on 5-minute marks; absorb the slack into that step.
-- Project (no time yet): 3–6 tiny logistics steps of 2–10 minutes each (find the place, check hours, pick a window, book it, plan the wait/what to bring), kind "research" or "action", startAt null, then a final step "Set the date & time in Runway" with kind "action".
-- If they said it happens every week/day, set repeat and plan the next occurrence.
-- Titles: short, concrete, imperative, no fluff. Do not repeat the person's whole sentence back as the title.
-- Defaults only when they didn't say otherwise (minutes): wake-up+snooze ${p.wakeUpBuffer}, bathroom ${p.bathroom}, shower ${p.shower}, dress ${p.dress}, breakfast ${p.breakfast}, other meal ${p.meal}, stop-and-switch ${p.windDown}, out the door ${p.outTheDoor}, arrive early ${p.arriveEarly}, unknown travel ${p.defaultTravel}.
-- Ask a question (max 2) only if a truly important fact is missing, e.g. which day for a one-off appointment; otherwise pick the sensible nearest option and say so in the summary.`;
+Rules:
+- Honor every constraint they said. Their durations ("takes me three hours") beat defaults. "Leave at six" → the leaving step must land at six: make the anchor the moment they leave, or put the activity as the anchor and the app will fit the rest. "Ready/done/finished by X" → finishBy = X; include the activity and any after-steps (shower, eat) so everything ends by X.
+- Timed task: steps when="before" in chronological order (wake-up first if the start is early), exactly one when="anchor" step for the activity itself with its real duration, and when="after" steps only if something must happen after the activity before they're free. Include transitions: stop-and-switch or wake-up, bathroom, shower, dressing, a meal if a mealtime is crossed, "grab" items, out the door, travel with ~20% traffic pad, arrive early. Early start → one when="night_before" step (lay out things, set alarm).
+- Project (no time yet): 3–6 steps of 2–10 min, when="before", kind research/action: find the place, check hours, pick a window, book it, plan the wait. Do not add a "set the time" step; the app does.
+- Repeat: set if they said every day/week.
+- Defaults when they didn't say (minutes): wake+snooze ${p.wakeUpBuffer}, bathroom ${p.bathroom}, shower ${p.shower}, dress ${p.dress}, breakfast ${p.breakfast}, other meal ${p.meal}, stop-and-switch ${p.windDown}, out the door ${p.outTheDoor}, arrive early ${p.arriveEarly}, unknown travel ${p.defaultTravel}.
+- Titles ≤ 8 words. Title of the task ≤ 6 words. questions: only if a vital fact is missing and cannot be sensibly assumed.`;
   if (!smallModel) return base;
   return `${base}
 
-Output ONLY a JSON object matching this schema, no prose, no markdown fences:
+Output ONLY a JSON object matching this schema, no prose, no markdown:
 ${JSON.stringify(PLAN_SCHEMA)}
 
-Example. Input (asked on Monday 2026-09-07 15:00): "${EXAMPLE_IN}"
+Example. Input (asked Monday 2026-09-07 15:00): "${EXAMPLE_IN}"
 Output:
-${JSON.stringify(EXAMPLE_OUT)}
-
-Check before answering: each step's startAt + durationMin equals the next step's startAt; the anchor step's startAt equals "anchor"; wake and travel start times end in 0 or 5.`;
+${JSON.stringify(EXAMPLE_OUT)}`;
 }
 
 export function fmtNow(now, tz) {
@@ -94,50 +92,91 @@ export function fmtNow(now, tz) {
   } catch (e) { return now.toString(); }
 }
 
-// Turn a model's local datetimes into ISO strings the app stores, and tidy up.
-// Tolerant on purpose: small models drift; the app must never crash on a plan.
+// ---------------------------------------------------------------------------
+// Layout: turn steps + durations into a timeline. Pure arithmetic in "wall
+// clock minutes" so it works the same in the browser and on a server in any
+// timezone; `toISO` converts a local "YYYY-MM-DDTHH:MM" into a real instant.
+// ---------------------------------------------------------------------------
+const wallMs = (s) => { const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/.exec(String(s || '')); return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) : null; };
+const wallStr = (ms) => { const d = new Date(ms); const p = (n) => String(n).padStart(2, '0'); return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}T${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`; };
+const floor5 = (ms) => Math.floor(ms / (5 * MIN)) * 5 * MIN;
+
 export function normalizePlan(plan, { toISO = defaultToISO } = {}) {
   const stamp = Date.now().toString(36);
-  let steps = (Array.isArray(plan.steps) ? plan.steps : []).map((s, i) => ({
+  const clean = (Array.isArray(plan.steps) ? plan.steps : []).map((s, i) => ({
     id: `a${stamp}${i.toString(36)}`,
-    title: String(s?.title || '').trim(),
+    title: String(s?.title || '').trim().slice(0, 90),
     durationMin: Math.max(0, Math.round(Number(s?.durationMin) || 0)),
-    startAt: toISO(s?.startAt),
-    kind: s?.kind === 'night_before' ? 'prep' : (STEP_KINDS.includes(s?.kind) ? s.kind : 'action'),
-    nightBefore: s?.kind === 'night_before',
+    when: ['night_before', 'before', 'anchor', 'after'].includes(s?.when) ? s.when : (s?.kind === 'anchor' ? 'anchor' : 'before'),
+    kind: STEP_KINDS.includes(s?.kind) ? s.kind : 'action',
     done: false,
   })).filter((s) => s.title);
-  const timed = plan.kind === 'timed';
-  const anchor = timed ? toISO(plan.anchor) : null;
-  if (timed) {
-    steps = steps.filter((s) => s.startAt);
-    steps.sort((a, b) => a.startAt.localeCompare(b.startAt));
-    const anchors = steps.filter((s) => s.kind === 'anchor');
-    if (anchors.length > 1) {
-      const keep = anchors.find((s) => s.startAt === anchor) || anchors[0];
-      anchors.forEach((s) => { if (s !== keep) s.kind = 'action'; });
-    }
-    if (!anchors.length && anchor) {
-      const at = steps.find((s) => s.startAt === anchor) || steps.find((s) => s.startAt >= anchor);
-      if (at) at.kind = 'anchor';
-    }
-  } else {
-    steps = steps.map((s) => ({ ...s, startAt: null }));
-    const st = steps.find((s) => /set the (date|time)/i.test(s.title));
-    if (st) { st.kind = 'settime'; st.action = 'settime'; }
-    else steps.push({ id: `a${stamp}z`, title: 'Set the date & time in Runway → it plans the day backwards', durationMin: 1, startAt: null, kind: 'settime', action: 'settime', done: false });
-  }
-  return {
-    title: String(plan.title || '').trim().slice(0, 80) || 'Task',
-    anchor,
+
+  const timed = plan.kind === 'timed' && wallMs(plan.anchor) != null;
+  const out = {
+    title: String(plan.title || '').trim().slice(0, 60) || 'Task',
+    anchor: null, finishBy: null,
     deadline: toISO(plan.deadline),
     location: plan.location ? String(plan.location).slice(0, 80) : null,
     travelMin: plan.travelMin != null && !isNaN(Number(plan.travelMin)) ? Math.max(0, Math.round(Number(plan.travelMin))) : null,
     repeat: ['daily', 'weekdays', 'weekly'].includes(plan.repeat) ? plan.repeat : 'none',
-    summary: String(plan.summary || '').slice(0, 200),
-    questions: Array.isArray(plan.questions) ? plan.questions.slice(0, 2).map(String) : [],
-    steps,
+    summary: String(plan.summary || '').replace(/\b\d{1,2}(:\d{2})?\s*(am|pm)\b/gi, '').replace(/\s{2,}/g, ' ').trim().slice(0, 80),
+    questions: Array.isArray(plan.questions) ? plan.questions.slice(0, 1).map(String) : [],
+    steps: [],
+    shiftedMin: 0,
   };
+
+  if (!timed) {
+    const steps = clean.filter((s) => s.when !== 'night_before').map((s) => ({ ...s, startAt: null, when: 'before' }));
+    steps.push({ id: `a${stamp}z`, title: 'Set the date & time in Runway → it plans the day backwards', durationMin: 1, startAt: null, kind: 'settime', action: 'settime', when: 'before', done: false });
+    out.steps = steps.map(({ when, ...s }) => s);
+    return out;
+  }
+
+  let anchorMs = wallMs(plan.anchor);
+  const finishBy = wallMs(plan.finishBy);
+  const night = clean.filter((s) => s.when === 'night_before');
+  const before = clean.filter((s) => s.when === 'before');
+  const after = clean.filter((s) => s.when === 'after');
+  let anchorStep = clean.find((s) => s.when === 'anchor');
+  if (!anchorStep) anchorStep = { id: `a${stamp}A`, title: out.title, durationMin: 60, kind: 'anchor', done: false };
+  anchorStep.kind = 'anchor';
+  for (const s of clean) if (s !== anchorStep && s.kind === 'anchor') s.kind = 'action';
+
+  // Backwards from the anchor. Wake-up, leaving, and the very first step land on
+  // 5-minute marks; the slack is absorbed into that step so nothing later moves.
+  let t = anchorMs;
+  for (let i = before.length - 1; i >= 0; i--) {
+    const s = before[i];
+    t -= s.durationMin * MIN;
+    if (s.kind === 'wake' || s.kind === 'travel' || i === 0) {
+      const f = floor5(t);
+      if (f !== t) { s.durationMin += Math.round((t - f) / MIN); t = f; }
+    }
+    s.start = t;
+  }
+  anchorStep.start = anchorMs;
+  let end = anchorMs + anchorStep.durationMin * MIN;
+  for (const s of after) { s.start = end; end += s.durationMin * MIN; }
+
+  // Hard finish time: if the plan runs past it, move the whole day earlier.
+  if (finishBy != null && end > finishBy) {
+    const shift = Math.ceil((end - finishBy) / (5 * MIN)) * 5 * MIN;
+    for (const s of [...before, anchorStep, ...after]) s.start -= shift;
+    anchorMs -= shift; end -= shift;
+    out.shiftedMin = shift / MIN;
+  }
+
+  // Night-before steps: 9pm the evening before the first step.
+  const first = before.length ? before[0].start : anchorMs;
+  const nightAt = floor5(first - (first % (24 * 60 * MIN)) - 3 * 60 * MIN); // 21:00 previous day, wall clock
+  for (const s of night) { s.start = nightAt; s.nightBefore = true; }
+
+  out.anchor = toISO(wallStr(anchorMs));
+  out.finishBy = finishBy != null ? toISO(wallStr(finishBy)) : null;
+  out.endsAt = toISO(wallStr(end));
+  out.steps = [...night, ...before, anchorStep, ...after].map(({ when, start, ...s }) => ({ ...s, startAt: toISO(wallStr(start)) }));
+  return out;
 }
 
 function defaultToISO(s) {

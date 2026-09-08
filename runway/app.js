@@ -2,7 +2,7 @@
 import { parseTask } from './nlp.js';
 import { buildPlan, replan, classify, keyTimes, fmtTime, fmtDay, findOverlaps, planSpan, DEFAULT_PREFS } from './planner.js';
 import * as store from './store.js';
-import { planWithAI, shiftSteps, resizeStep, nextOccurrence, testApiKey, testServer as pingServer, AI_MODEL } from './ai.js';
+import { planWithAI, shiftSteps, resizeStep, nextOccurrence, testApiKey, testServer as pingServer } from './ai.js';
 
 const $ = (id) => document.getElementById(id);
 const state = store.state;
@@ -23,7 +23,7 @@ store.load();
 store.subscribe(render);
 render();
 $('todayLabel').textContent = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
-$('version').textContent = 'Runway 0.2 · rules on your phone, Claude when a key or server is set';
+$('version').textContent = 'Runway 0.3';
 setInterval(tick, 20000);
 tick();
 if (!NATIVE && 'serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
@@ -125,9 +125,10 @@ function taskCard(t, now, overlapWith) {
     if (kt.wakeAt) p.push(`<span class="pill wake">⏰ Wake ${fmtTime(kt.wakeAt)}</span>`);
     else if (kt.startAt) p.push(`<span class="pill">▶ Start ${fmtTime(kt.startAt)}</span>`);
     if (kt.leaveAt) p.push(`<span class="pill leave">🚗 Leave ${fmtTime(kt.leaveAt)}</span>`);
+    if (t.finishBy) p.push(`<span class="pill done">✓ Done by ${fmtTime(new Date(t.finishBy))}</span>`);
     if (overlapWith && overlapWith.length) p.push(`<span class="pill warn">⚠️ Overlaps “${esc(overlapWith[0].title)}”</span>`);
     if (t.repeat && t.repeat !== 'none') p.push(`<span class="pill">↻ ${esc(t.repeat)}</span>`);
-    if (t.aiError) p.push(`<span class="pill warn">AI didn’t run: ${esc(t.aiError)}</span>`);
+    if (t.aiError) p.push(`<span class="pill warn">Smart planning didn’t run: ${esc(t.aiError)}</span>`);
     pills = p.join('');
   } else {
     when = `${steps.length - doneCount} tiny steps · ~${totalMin(steps.filter((s) => !s.done))} min total${t.deadline ? ` · by ${esc(fmtDay(new Date(t.deadline), now))}` : ''}`;
@@ -156,7 +157,7 @@ function taskCard(t, now, overlapWith) {
     box.className = 'steps';
     if (t.anchor) {
       const hint = document.createElement('div'); hint.className = 'steps-hint';
-      hint.textContent = (t.source === 'ai' && t.summary ? `✦ ${t.summary} · ` : '') + 'Tap a duration to fix it — the whole plan shifts.';
+      hint.textContent = (t.source === 'ai' && t.summary ? `${t.summary} · ` : '') + 'Tap a duration to fix it — the whole plan shifts.';
       box.appendChild(hint);
     }
     let lastDay = null;
@@ -177,7 +178,7 @@ function taskCard(t, now, overlapWith) {
     const tools = document.createElement('div');
     tools.className = 'task-tools';
     tools.innerHTML = `
-      ${t.source !== 'ai' && aiEnabled() ? '<button class="btn secondary" data-act="retry">Replan with AI</button>' : ''}
+      ${t.source !== 'ai' && aiEnabled() ? '<button class="btn secondary" data-act="retry">Replan</button>' : ''}
       <button class="btn secondary" data-act="edit">${t.anchor ? 'Edit' : 'Set time'}</button>
       ${t.anchor ? '<button class="btn secondary" data-act="cal">Calendar</button>' : ''}
       <button class="btn ghost" data-act="done">${t.done ? 'Reopen' : 'All done'}</button>
@@ -300,11 +301,12 @@ function icsEsc(s) { return String(s).replace(/\\/g, '\\\\').replace(/\n/g, '\\n
 $('calClose').addEventListener('click', closeSheets);
 
 async function retryWithAI(t) {
-  toast('Asking the planner…');
+  toast('Replanning…');
   try {
     const ai = await planWithAI({ text: t.raw || t.title, prefs: state.prefs, ...aiArgs() });
     t.title = ai.title; t.anchor = ai.anchor; t.location = ai.location; t.travelMin = ai.travelMin; t.away = ai.travelMin != null;
     t.deadline = ai.deadline; t.repeat = ai.repeat; t.summary = ai.summary; t.steps = ai.steps; t.source = 'ai'; delete t.aiError;
+    t.finishBy = ai.finishBy || null; t.endsAt = ai.endsAt || null; t.shiftedMin = ai.shiftedMin || 0;
     t.updatedAt = Date.now(); store.save();
     const kt = keyTimes(t); toast(kt.leaveAt ? `Replanned. Leave by ${fmtTime(kt.leaveAt)}.` : 'Replanned.');
   } catch (e) { t.aiError = e.message; store.save(); toast(`AI planner: ${e.message}`); }
@@ -358,19 +360,24 @@ async function goReview() {
   draft.raw = text; draft.ai = null;
   if (aiEnabled()) {
     planning = true;
+    const t0 = Date.now();
     $('nextAdd').disabled = true; $('nextAdd').textContent = 'Planning…';
-    $('listenStatus').innerHTML = '<span class="spin"></span> Reading the whole thing and planning backwards…';
+    const tickStatus = () => { $('listenStatus').innerHTML = `<span class="spin"></span> Planning backwards… ${((Date.now() - t0) / 1000).toFixed(0)}s`; };
+    tickStatus(); const iv = setInterval(tickStatus, 500);
     try {
       draft.ai = await planWithAI({ text, prefs: state.prefs, ...aiArgs() });
       draft.title = draft.ai.title; draft.anchor = draft.ai.anchor; draft.location = draft.ai.location;
       draft.travelMin = draft.ai.travelMin; draft.deadline = draft.ai.deadline; draft.hints = [];
     } catch (e) {
       draft.aiError = e.message;
-      toast(`AI planner: ${e.message} Using built-in rules.`);
+      toast(`Smart planning failed: ${e.message} Using built-in rules.`);
     } finally {
+      clearInterval(iv);
       planning = false; $('nextAdd').disabled = false; $('nextAdd').textContent = 'Next';
       $('listenStatus').textContent = 'Tap the mic and talk, or type.';
     }
+    // A clean answer goes straight onto the home screen. The review sheet is only for open questions.
+    if (draft.ai && !draft.ai.questions.length) { fillReview(); saveNew(); return; }
   }
   fillReview();
 }
@@ -395,11 +402,11 @@ function fillReview() {
     hint.length = 0;
     if (draft.ai.questions.length) hint.push(draft.ai.questions.join(' '));
     $('rvSummary').hidden = false;
-    $('rvSummary').innerHTML = `<b>Claude’s plan:</b> ${esc(draft.ai.summary)}${draft.ai.repeat !== 'none' ? ` · repeats ${esc(draft.ai.repeat)}` : ''}<br><span class="muted small" style="margin:0">${draft.ai.steps.length} steps. Change the time here and the whole plan moves with it.</span>`;
+    $('rvSummary').innerHTML = `<b>One question first:</b> ${esc(draft.ai.questions[0] || '')}<br><span class="muted small" style="margin:0">Fix the time or place below and tap Plan it.</span>`;
     document.querySelector('#stepReview .toggles').hidden = true;
   } else if (draft.aiError) {
     $('rvSummary').hidden = false;
-    $('rvSummary').innerHTML = `<b>AI planner didn’t run:</b> ${esc(draft.aiError)}<br><span class="muted small" style="margin:0">Using the built-in rules for this one. Check gear → AI planning → Test.</span>`;
+    $('rvSummary').innerHTML = `<b>Smart planning didn’t run:</b> ${esc(draft.aiError)}<br><span class="muted small" style="margin:0">Using the built-in rules for this one. Check gear → Smart planning → Test.</span>`;
     document.querySelector('#stepReview .toggles').hidden = false;
   } else {
     $('rvSummary').hidden = true;
@@ -445,6 +452,7 @@ function saveNew() {
   };
   if (draft.ai) {
     task.source = 'ai'; task.repeat = draft.ai.repeat; task.summary = draft.ai.summary;
+    task.finishBy = draft.ai.finishBy || null; task.endsAt = draft.ai.endsAt || null; task.shiftedMin = draft.ai.shiftedMin || 0;
     task.travelMin = draft.ai.travelMin; task.away = draft.ai.travelMin != null;
     let steps = draft.ai.steps;
     if (task.anchor && draft.ai.anchor && task.anchor !== draft.ai.anchor) steps = shiftSteps(steps, new Date(task.anchor) - new Date(draft.ai.anchor));
@@ -460,7 +468,8 @@ function saveNew() {
   store.save();
   closeSheets();
   const kt = keyTimes(task);
-  if (task.anchor && kt.leaveAt) toast(`Planned. Leave by ${fmtTime(kt.leaveAt)}${kt.wakeAt ? `, wake ${fmtTime(kt.wakeAt)}` : ''}.`);
+  if (task.source === 'ai' && task.shiftedMin) toast(`Planned. Moved ${task.shiftedMin} min earlier so you’re done by ${fmtTime(new Date(task.finishBy))}.`);
+  else if (task.anchor && kt.leaveAt) toast(`Planned. Leave by ${fmtTime(kt.leaveAt)}${kt.wakeAt ? `, wake ${fmtTime(kt.wakeAt)}` : ''}.`);
   else if (task.anchor) toast(`Planned. Start at ${fmtTime(kt.startAt)}.`);
   else toast(`${task.steps.length} tiny steps. Just do the first one.`);
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -512,7 +521,7 @@ async function saveEdit() {
     const prevTravel = t._prevTravel; delete t._prevTravel;
     if (travel && prevTravel != null && t.travelMin !== prevTravel) t.steps = resizeStep(t.steps, travel.id, Math.round(t.travelMin * 1.2));
   } else if (aiEnabled()) {
-    closeSheets(); toast('Asking the planner to redo this…');
+    closeSheets(); toast('Replanning…');
     const desc = `${t.title}${t.anchor ? ` at ${new Date(t.anchor).toLocaleString(undefined, { weekday: 'long', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : ' (no time yet)'}${t.location ? ` at ${t.location}` : ''}${t.away && t.travelMin ? `, ${t.travelMin} minutes away` : ''}${t.getReady ? ', I need to shower and get ready first' : ''}${t.summary ? `. Earlier plan summary: ${t.summary}` : ''}`;
     try {
       const ai = await planWithAI({ text: desc, prefs: state.prefs, ...aiArgs() });
@@ -654,13 +663,13 @@ async function testServer(u) {
   el.textContent = 'Checking your server…';
   try {
     const h = await pingServer(u, state.settings.aiToken);
-    el.textContent = `Connected — ${h.provider === 'ollama' ? 'local model' : 'Claude'} (${h.model}) on your server${h.auth && !state.settings.aiToken ? '. It wants a password — enter it below.' : '.'}`;
+    el.textContent = `Connected to your Runway server${h.auth && !state.settings.aiToken ? '. It wants a password — enter it below.' : '.'}`;
   } catch (e) {
     el.textContent = 'Can’t reach that server. Check the URL, that it’s running, and that it’s reachable from this phone (see backend/README.md).';
   }
 }
 function renderAiStatus() {
-  $('aiStatus').textContent = state.settings.aiEndpoint ? 'On — plans come from your Runway server. Tap Test to check it.' : state.settings.aiKey ? `On — plans come from Claude (${AI_MODEL}) directly. Tap Test to be sure the key works.` : 'Off — plans come from the built-in rules. Connect a server or paste a key to turn on real understanding of what you say.';
+  $('aiStatus').textContent = state.settings.aiEndpoint ? 'On — via your Runway server. Tap Test to check it.' : state.settings.aiKey ? 'On. Tap Test to be sure the key works.' : 'Off — using the built-in rules. Connect a server or paste a key so Runway understands everything you say.';
 }
 
 function openSettings() {
