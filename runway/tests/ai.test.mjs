@@ -7,16 +7,15 @@ const iso = (h, m) => day(h, m).toISOString();
 const local = (h, m = 0) => `2026-09-11T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 
 const MODEL_PLAN = {
-  title: 'Weekly 12-mile run', kind: 'timed', anchor: local(6), deadline: null, location: null, travelMin: null, repeat: 'weekly',
-  summary: 'Wake 5:15 · out the door 6:00 · done 9:00',
-  questions: [],
+  title: 'Weekly 12-mile run', kind: 'timed', anchor: local(6), finishBy: null, deadline: null, location: null, travelMin: null, repeat: 'weekly',
+  summary: 'Early run, kit ready the night before', questions: [],
   steps: [
-    { title: 'Night before: lay out kit, charge watch, alarm 5:15', durationMin: 10, startAt: '2026-09-10T21:00', kind: 'night_before' },
-    { title: 'Wake up (alarm + snooze budget)', durationMin: 15, startAt: local(5, 15), kind: 'wake' },
-    { title: 'Bathroom, water, fuel', durationMin: 15, startAt: local(5, 30), kind: 'prep' },
-    { title: 'Kit on, shoes, watch, keys', durationMin: 15, startAt: local(5, 45), kind: 'transition' },
-    { title: 'Run 12 miles', durationMin: 180, startAt: local(6), kind: 'anchor' },
-    { title: 'Stretch, shower, eat', durationMin: 40, startAt: local(9), kind: 'prep' },
+    { title: 'Lay out kit, charge watch, set alarm', durationMin: 10, when: 'night_before', kind: 'prep' },
+    { title: 'Wake up (alarm + snooze budget)', durationMin: 15, when: 'before', kind: 'wake' },
+    { title: 'Bathroom, water, fuel', durationMin: 15, when: 'before', kind: 'prep' },
+    { title: 'Kit on, shoes, watch, keys', durationMin: 15, when: 'before', kind: 'transition' },
+    { title: 'Run 12 miles', durationMin: 180, when: 'anchor', kind: 'anchor' },
+    { title: 'Stretch, shower, eat', durationMin: 40, when: 'after', kind: 'prep' },
   ],
 };
 
@@ -35,13 +34,18 @@ test('planWithAI sends the right request and normalizes the plan', async () => {
   assert.equal(req.headers['anthropic-beta'], undefined); // no fallback beta on Sonnet
   assert.equal(req.opts.output_config.format.type, 'json_schema');
   assert.equal(req.headers['anthropic-dangerous-direct-browser-access'], 'true');
-  assert.match(req.opts.system, /Friday, September 11, 2026/);
+  assert.match(req.opts.system[0].text, /Friday, September 11, 2026/);
+  assert.equal(req.opts.system[0].cache_control.type, 'ephemeral');
   assert.equal(plan.title, 'Weekly 12-mile run');
   assert.equal(plan.anchor, iso(6));
   assert.equal(plan.repeat, 'weekly');
   assert.equal(plan.steps.length, 6);
   assert.equal(plan.steps[0].nightBefore, true);
   assert.equal(plan.steps.find((s) => s.kind === 'anchor').title, 'Run 12 miles');
+  assert.equal(plan.steps.find((s) => s.kind === 'wake').startAt, iso(5, 15));
+  assert.equal(plan.steps[5].startAt, iso(9));
+  assert.equal(req.opts.thinking.type, 'disabled');
+  assert.equal(req.opts.output_config.effort, 'low');
   assert.ok(plan.steps.every((s, i, a) => i === 0 || a[i - 1].startAt <= s.startAt), 'chronological');
 });
 
@@ -84,8 +88,8 @@ test('nextOccurrence rolls a weekly task forward 7 days with fresh state', () =>
 });
 
 test('server mode posts to {url}/plan with the password and accepts the plan', async () => {
-  const serverPlan = { title: 'Dentist', anchor: iso(8), deadline: null, location: null, travelMin: 45, repeat: 'none', summary: 'Wake 5:30', questions: [],
-    steps: [{ id: 'x1', title: 'Wake up', durationMin: 15, startAt: iso(5, 30), kind: 'wake', nightBefore: false, done: false }, { id: 'x2', title: 'Dentist', durationMin: 60, startAt: iso(8), kind: 'anchor', nightBefore: false, done: false }] };
+  const serverPlan = { title: 'Dentist', anchor: iso(8), finishBy: null, deadline: null, location: null, travelMin: 45, repeat: 'none', summary: 'Early start', questions: [],
+    steps: [{ id: 'x1', title: 'Wake up', durationMin: 15, startAt: iso(5, 30), kind: 'wake', done: false }, { id: 'x2', title: 'Dentist', durationMin: 60, startAt: iso(8), kind: 'anchor', done: false }] };
   mockFetch({ plan: serverPlan, model: 'qwen2.5:7b', provider: 'ollama' });
   const plan = await planWithAI({ text: 'dentist', prefs: {}, endpoint: 'https://abc.trycloudflare.com/', token: 'pw', now: day(15) });
   assert.equal(mockFetch.last.url, 'https://abc.trycloudflare.com/plan');

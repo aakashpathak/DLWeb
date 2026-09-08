@@ -30,25 +30,31 @@ async function planViaServer({ text, prefs, endpoint, token, now }) {
   let data = {};
   try { data = await res.json(); } catch (e) { /* non-JSON error page */ }
   if (!res.ok) throw new Error(data.error || (res.status === 401 ? 'Wrong server password.' : `Server error ${res.status}`));
-  if (!data.plan) throw new Error('Server sent no plan.');
-  // Server already normalized; re-run for safety (idempotent) so the shape is guaranteed.
-  return { ...normalizePlan({ ...data.plan, kind: data.plan.anchor ? 'timed' : 'project', steps: data.plan.steps.map((s) => ({ ...s, kind: s.nightBefore ? 'night_before' : s.kind })) }), model: data.model, provider: data.provider };
+  const plan = data.plan;
+  if (!plan || !Array.isArray(plan.steps)) throw new Error('Server sent no plan.');
+  // The server already laid the timeline out with the shared contract; just make sure ids exist.
+  plan.steps = plan.steps.map((s, i) => ({ done: false, ...s, id: s.id || `a${Date.now().toString(36)}${i.toString(36)}` }));
+  return { ...plan, model: data.model, provider: data.provider };
 }
 
 async function planDirect({ text, prefs, apiKey, now }) {
+  // Speed matters more than deep reasoning here: the model only picks steps and
+  // durations (the app does the time math), so thinking is off and effort is low.
+  const system = [{ type: 'text', text: buildSystemPrompt({ prefs, now, tz: TZ() }), cache_control: { type: 'ephemeral' } }];
   const body = {
     model: AI_MODEL,
-    max_tokens: 8000,
-    output_config: { effort: 'medium', format: { type: 'json_schema', schema: PLAN_SCHEMA } },
-    system: buildSystemPrompt({ prefs, now, tz: TZ() }),
+    max_tokens: 2500,
+    thinking: { type: 'disabled' },
+    output_config: { effort: 'low', format: { type: 'json_schema', schema: PLAN_SCHEMA } },
+    system,
     messages: [{ role: 'user', content: text }],
   };
   let msg;
   try { msg = await callAnthropic(apiKey, body); }
   catch (e) {
     if (e.status !== 400) throw e;
-    // The API didn't like the structured-output settings: ask for plain JSON instead and parse it ourselves.
-    msg = await callAnthropic(apiKey, { model: AI_MODEL, max_tokens: 8000, system: buildSystemPrompt({ prefs, now, tz: TZ(), smallModel: true }), messages: [{ role: 'user', content: text }] }, { withFallback: false });
+    // The API didn't like some setting: ask for plain JSON instead and parse it ourselves.
+    msg = await callAnthropic(apiKey, { model: AI_MODEL, max_tokens: 2500, system: buildSystemPrompt({ prefs, now, tz: TZ(), smallModel: true }), messages: [{ role: 'user', content: text }] }, { withFallback: false });
   }
   if (msg.stop_reason === 'refusal') throw new Error('Claude declined this request.');
   const textBlock = (msg.content || []).find((b) => b.type === 'text');
@@ -83,9 +89,9 @@ async function callAnthropic(apiKey, body, { withFallback = FALLBACK_MODELS.test
 
 // Settings → "Test key": one tiny request, returns a human sentence.
 export async function testApiKey(apiKey) {
-  const msg = await callAnthropic(apiKey, { model: AI_MODEL, max_tokens: 20, messages: [{ role: 'user', content: 'Reply with the single word: ready' }] });
-  const t = (msg.content || []).find((b) => b.type === 'text')?.text || '';
-  return `Key works. ${msg.model} said “${t.trim().slice(0, 30)}”.`;
+  const t0 = Date.now();
+  await callAnthropic(apiKey, { model: AI_MODEL, max_tokens: 5, thinking: { type: 'disabled' }, messages: [{ role: 'user', content: 'Reply with the single word: ready' }] });
+  return `Key works — smart planning is on (${((Date.now() - t0) / 1000).toFixed(1)}s round trip).`;
 }
 
 // Settings → "Test server".
@@ -111,9 +117,14 @@ export function resizeStep(steps, stepId, newMin) {
   if (idx < 0) return steps;
   const delta = (newMin - steps[idx].durationMin) * MIN;
   const target = steps[idx];
+  const anchorIdx = steps.findIndex((s) => s.kind === 'anchor');
+  const afterAnchor = anchorIdx >= 0 && idx > anchorIdx;
+  const move = (s, ms) => (s.startAt && !s.nightBefore ? { ...s, startAt: new Date(new Date(s.startAt).getTime() + ms).toISOString() } : s);
+  if (target.nightBefore) return steps.map((s, i) => (i === idx ? { ...s, durationMin: newMin } : s));
   return steps.map((s, i) => {
-    if (i === idx) return { ...s, durationMin: newMin, startAt: s.startAt && !target.nightBefore ? new Date(new Date(s.startAt).getTime() - delta).toISOString() : s.startAt };
-    if (i < idx && s.startAt && !s.nightBefore && !target.nightBefore) return { ...s, startAt: new Date(new Date(s.startAt).getTime() - delta).toISOString() };
+    if (i === idx) return afterAnchor ? { ...s, durationMin: newMin } : { ...move(s, -delta), durationMin: newMin };
+    if (afterAnchor && i > idx) return move(s, delta);   // later things happen later
+    if (!afterAnchor && i < idx) return move(s, -delta); // earlier things happen earlier; anchor holds
     return s;
   });
 }
