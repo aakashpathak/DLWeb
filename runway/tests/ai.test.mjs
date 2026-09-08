@@ -122,3 +122,16 @@ test('testApiKey reports a working key in plain words', async () => {
   mockFetch({ error: { message: 'invalid x-api-key' } }, 401);
   await assert.rejects(() => testApiKey('sk-ant-bad'), /rejected/);
 });
+
+test('a 400 on structured output falls back to a plain-JSON prompt', async () => {
+  const calls = [];
+  globalThis.fetch = async (url, opts) => {
+    const body = JSON.parse(opts.body); calls.push(body);
+    if (body.output_config) return { ok: false, status: 400, json: async () => ({ error: { message: 'output_config.format: unknown' } }) };
+    return { ok: true, status: 200, json: async () => ({ stop_reason: 'end_turn', model: 'claude-opus-5', content: [{ type: 'text', text: '```json\n' + JSON.stringify(MODEL_PLAN) + '\n```' }] }) };
+  };
+  const plan = await planWithAI({ text: 'run', prefs: {}, apiKey: 'sk-ant-x', now: day(15) });
+  assert.equal(calls.length, 3); // with fallback beta, without it, then plain-JSON prompt
+  assert.ok(!calls[2].output_config && /Output ONLY a JSON object/.test(calls[2].system));
+  assert.equal(plan.steps.length, 6);
+});
