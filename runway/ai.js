@@ -7,7 +7,7 @@
 
 import { PLAN_SCHEMA, buildSystemPrompt, normalizePlan, extractJSON } from './plan-contract.js';
 
-export const AI_MODEL = 'claude-opus-5';
+export const AI_MODEL = 'claude-sonnet-5'; // Sonnet 5: ~3x cheaper than Opus 5, plenty for planning
 const API = 'https://api.anthropic.com/v1/messages';
 const TZ = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) { return undefined; } };
 
@@ -58,7 +58,8 @@ async function planDirect({ text, prefs, apiKey, now }) {
 
 // One call to the Messages API from the phone. Tries the server-side refusal
 // fallback first; if the API rejects that (older account/API), retries plain.
-async function callAnthropic(apiKey, body, { withFallback = true } = {}) {
+const FALLBACK_MODELS = /opus-5|fable/;
+async function callAnthropic(apiKey, body, { withFallback = FALLBACK_MODELS.test(body.model || '') } = {}) {
   const headers = {
     'content-type': 'application/json',
     'x-api-key': apiKey,
