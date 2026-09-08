@@ -14,7 +14,7 @@
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icons/icon-180.png" />
   <link rel="icon" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="styles.css?v=1" />
+  <link rel="stylesheet" href="styles.css?v=3" />
 </head>
 <body>
   <div id="app" class="app">
@@ -87,6 +87,7 @@
         </div>
         <div class="hint" id="rvWhenHint"></div>
       </div>
+      <div class="ai-summary" id="rvSummary" hidden></div>
       <div class="field two">
         <label>
           <span>Where?</span>
@@ -124,9 +125,12 @@
       <h3>Account</h3>
       <div id="accountBox" class="account"></div>
 
-      <h3>AI planning <span class="badge">later</span></h3>
-      <p class="muted">Right now plans come from Runway’s built-in rules and run entirely on your phone. When you’re ready, an API key goes here and the planner gets smarter.</p>
-      <label class="field"><span>API key (optional)</span><input type="password" id="aiKey" placeholder="not required" autocomplete="off" /></label>
+      <h3>AI planning</h3>
+      <p class="muted" id="aiStatus"></p>
+      <label class="field"><span>Runway server URL</span><input type="url" id="aiEndpoint" placeholder="https://…trycloudflare.com" autocomplete="off" autocapitalize="off" inputmode="url" /></label>
+      <label class="field"><span>Server password</span><input type="password" id="aiToken" placeholder="the RUNWAY_TOKEN from the server" autocomplete="off" /></label>
+      <p class="muted small">Recommended: run the little server in <b>backend/</b> on any computer. It keeps the key off the phone and can use Claude or a local model. Or, for a quick test, paste an Anthropic key directly:</p>
+      <label class="field"><span>Anthropic API key (direct)</span><input type="password" id="aiKey" placeholder="sk-ant-…" autocomplete="off" /></label>
 
       <h3>Data</h3>
       <div class="row-btns">
@@ -197,6 +201,6 @@
 
   <div class="toast" id="toast" hidden></div>
 
-  <script type="module" src="app.js?v=1"></script>
+  <script type="module" src="app.js?v=3"></script>
 </body>
 </html>

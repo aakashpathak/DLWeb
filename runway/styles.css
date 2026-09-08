@@ -200,3 +200,7 @@ textarea:focus, input:focus { border-color: var(--accent); }
   .app { max-width: 560px; margin: 0 auto; }
   .sheet { max-width: 560px; margin: 0 auto; }
 }
+
+.ai-summary { background: var(--accent-soft); color: var(--ink); border-radius: 14px; padding: 12px 14px; font-size: 15px; line-height: 1.4; }
+.spin { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; margin-right: 4px; }
+@keyframes spin { to { transform: rotate(360deg); } }

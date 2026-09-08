@@ -66,6 +66,42 @@ function icon(size, rounded) {
     return [...bg, 255];
   });
 }
+function splash(size) {
+  const bg = [246, 245, 242];
+  return png(size, (x, y) => {
+    // centred 400px icon on an off-white field
+    const half = 200, cx = size / 2, cy = size / 2;
+    if (Math.abs(x - cx) < half && Math.abs(y - cy) < half) {
+      const px = icon.__pixel || (icon.__pixel = iconPixel(half * 2));
+      return px(x - cx + half, y - cy + half, bg);
+    }
+    return [...bg, 255];
+  });
+}
+function iconPixel(size) {
+  const bg = [59, 91, 219], run = [255, 255, 255], dash = [59, 91, 219], you = [255, 178, 36];
+  const r = size * 0.22;
+  return (x, y, outside) => {
+    const u = x / size, v = y / size;
+    const cx = Math.min(Math.max(x, r), size - r), cy = Math.min(Math.max(y, r), size - r);
+    if ((x - cx) ** 2 + (y - cy) ** 2 > r * r) return [...outside, 255];
+    const dx = u - 0.5, dy = v - 0.76;
+    if (dx * dx + dy * dy < 0.05 ** 2) return [...you, 255];
+    const t = (v - 0.85) / (0.15 - 0.85);
+    if (t >= 0 && t <= 1) {
+      const half = 0.30 * (1 - t) + 0.06 * t;
+      if (Math.abs(u - 0.5) <= half) {
+        const dashW = 0.012 * (1 - t) + 0.004 * t;
+        if (Math.abs(u - 0.5) <= dashW && Math.floor(t * 9) % 2 === 0) return [...dash, 255];
+        return [...run, 255];
+      }
+    }
+    return [...bg, 255];
+  };
+}
 for (const s of [180, 192, 512]) writeFileSync(new URL(`../icons/icon-${s}.png`, import.meta.url), icon(s, s !== 180));
+// App Store icon (square, no transparency) + splash source for the iOS shell
+writeFileSync(new URL('../ios-wrapper/assets/icon.png', import.meta.url), icon(1024, false));
+writeFileSync(new URL('../ios-wrapper/assets/splash.png', import.meta.url), splash(2732));
 writeFileSync(new URL('../icons/icon-maskable-512.png', import.meta.url), icon(512, false));
 console.log('icons written');
