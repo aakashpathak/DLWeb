@@ -2,7 +2,7 @@
 import { parseTask } from './nlp.js';
 import { buildPlan, replan, classify, keyTimes, fmtTime, fmtDay, findOverlaps, planSpan, DEFAULT_PREFS } from './planner.js';
 import * as store from './store.js';
-import { planWithAI, shiftSteps, resizeStep, nextOccurrence, AI_MODEL } from './ai.js';
+import { planWithAI, shiftSteps, resizeStep, nextOccurrence, testApiKey, testServer as pingServer, AI_MODEL } from './ai.js';
 
 const $ = (id) => document.getElementById(id);
 const state = store.state;
@@ -127,6 +127,7 @@ function taskCard(t, now, overlapWith) {
     if (kt.leaveAt) p.push(`<span class="pill leave">🚗 Leave ${fmtTime(kt.leaveAt)}</span>`);
     if (overlapWith && overlapWith.length) p.push(`<span class="pill warn">⚠️ Overlaps “${esc(overlapWith[0].title)}”</span>`);
     if (t.repeat && t.repeat !== 'none') p.push(`<span class="pill">↻ ${esc(t.repeat)}</span>`);
+    if (t.aiError) p.push(`<span class="pill warn">AI didn’t run: ${esc(t.aiError)}</span>`);
     pills = p.join('');
   } else {
     when = `${steps.length - doneCount} tiny steps · ~${totalMin(steps.filter((s) => !s.done))} min total${t.deadline ? ` · by ${esc(fmtDay(new Date(t.deadline), now))}` : ''}`;
@@ -176,6 +177,7 @@ function taskCard(t, now, overlapWith) {
     const tools = document.createElement('div');
     tools.className = 'task-tools';
     tools.innerHTML = `
+      ${t.source !== 'ai' && aiEnabled() ? '<button class="btn secondary" data-act="retry">Replan with AI</button>' : ''}
       <button class="btn secondary" data-act="edit">${t.anchor ? 'Edit' : 'Set time'}</button>
       ${t.anchor ? '<button class="btn secondary" data-act="cal">Calendar</button>' : ''}
       <button class="btn ghost" data-act="done">${t.done ? 'Reopen' : 'All done'}</button>
@@ -183,6 +185,7 @@ function taskCard(t, now, overlapWith) {
     tools.addEventListener('click', (e) => {
       const act = e.target.closest('[data-act]')?.dataset.act;
       if (act === 'edit') openEdit(t.id);
+      if (act === 'retry') retryWithAI(t);
       if (act === 'cal') openCalendar(t);
       if (act === 'done') { t.done = !t.done; t.updatedAt = Date.now(); if (t.done) { t.steps.forEach((s) => (s.done = true)); spawnRepeat(t); } store.save(); toast(t.done ? 'Nice. Done.' : 'Reopened'); }
       if (act === 'delete') { if (confirm(`Delete “${t.title}”?`)) { state.tasks = state.tasks.filter((x) => x.id !== t.id); store.save(); } }
@@ -291,6 +294,16 @@ function openCalendar(t) {
 function icsEsc(s) { return String(s).replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/[,;]/g, (c) => '\\' + c); }
 $('calClose').addEventListener('click', closeSheets);
 
+async function retryWithAI(t) {
+  toast('Asking the planner…');
+  try {
+    const ai = await planWithAI({ text: t.raw || t.title, prefs: state.prefs, ...aiArgs() });
+    t.title = ai.title; t.anchor = ai.anchor; t.location = ai.location; t.travelMin = ai.travelMin; t.away = ai.travelMin != null;
+    t.deadline = ai.deadline; t.repeat = ai.repeat; t.summary = ai.summary; t.steps = ai.steps; t.source = 'ai'; delete t.aiError;
+    t.updatedAt = Date.now(); store.save();
+    const kt = keyTimes(t); toast(kt.leaveAt ? `Replanned. Leave by ${fmtTime(kt.leaveAt)}.` : 'Replanned.');
+  } catch (e) { t.aiError = e.message; store.save(); toast(`AI planner: ${e.message}`); }
+}
 function spawnRepeat(t) {
   const n = nextOccurrence(t);
   if (!n || state.tasks.some((x) => x.anchor === n.anchor && x.title === n.title)) return;
@@ -347,6 +360,7 @@ async function goReview() {
       draft.title = draft.ai.title; draft.anchor = draft.ai.anchor; draft.location = draft.ai.location;
       draft.travelMin = draft.ai.travelMin; draft.deadline = draft.ai.deadline; draft.hints = [];
     } catch (e) {
+      draft.aiError = e.message;
       toast(`AI planner: ${e.message} Using built-in rules.`);
     } finally {
       planning = false; $('nextAdd').disabled = false; $('nextAdd').textContent = 'Next';
@@ -378,6 +392,10 @@ function fillReview() {
     $('rvSummary').hidden = false;
     $('rvSummary').innerHTML = `<b>Claude’s plan:</b> ${esc(draft.ai.summary)}${draft.ai.repeat !== 'none' ? ` · repeats ${esc(draft.ai.repeat)}` : ''}<br><span class="muted small" style="margin:0">${draft.ai.steps.length} steps. Change the time here and the whole plan moves with it.</span>`;
     document.querySelector('#stepReview .toggles').hidden = true;
+  } else if (draft.aiError) {
+    $('rvSummary').hidden = false;
+    $('rvSummary').innerHTML = `<b>AI planner didn’t run:</b> ${esc(draft.aiError)}<br><span class="muted small" style="margin:0">Using the built-in rules for this one. Check gear → AI planning → Test.</span>`;
+    document.querySelector('#stepReview .toggles').hidden = false;
   } else {
     $('rvSummary').hidden = true;
     document.querySelector('#stepReview .toggles').hidden = false;
@@ -412,7 +430,7 @@ function saveNew() {
   const title = $('rvTitle').value.trim() || draft.title;
   const task = {
     id: 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-    title, createdAt: Date.now(), updatedAt: Date.now(), done: false,
+    title, raw: draft.raw || title, createdAt: Date.now(), updatedAt: Date.now(), done: false,
     anchor: readWhen('rv'),
     away: $('rvAway').checked,
     getReady: $('rvReady').checked,
@@ -430,6 +448,7 @@ function saveNew() {
     task.steps = steps;
   } else {
     task.steps = buildPlan(task, state.prefs);
+    if (draft.aiError) task.aiError = draft.aiError;
   }
   state.tasks.unshift(task);
   openIds.clear(); openIds.add(task.id);
@@ -601,25 +620,36 @@ $('aiEndpoint').addEventListener('change', () => {
   if (u) testServer(u);
 });
 $('aiToken').addEventListener('change', () => { state.settings.aiToken = $('aiToken').value.trim(); store.save(); if (state.settings.aiEndpoint) testServer(state.settings.aiEndpoint); });
-$('aiKey').addEventListener('change', () => {
+function saveKey() {
   const k = $('aiKey').value.trim();
-  if (k && !/^sk-ant-/.test(k)) { toast('That doesn’t look like an Anthropic key (starts with sk-ant-).'); }
+  if (state.settings.aiKey === k) return;
   state.settings.aiKey = k; store.save(); renderAiStatus();
+}
+$('aiKey').addEventListener('input', saveKey);
+$('aiKey').addEventListener('change', saveKey);
+$('aiKey').addEventListener('blur', saveKey);
+$('aiTest').addEventListener('click', async () => {
+  saveKey();
+  const el = $('aiStatus');
+  if (state.settings.aiEndpoint) { testServer(state.settings.aiEndpoint); return; }
+  if (!state.settings.aiKey) { el.textContent = 'Paste a key first.'; return; }
+  if (!/^sk-ant-/.test(state.settings.aiKey)) { el.textContent = 'That doesn’t look like an Anthropic key (they start with sk-ant-). Paste the whole thing.'; return; }
+  el.innerHTML = '<span class="spin"></span> Testing the key…';
+  try { el.textContent = await testApiKey(state.settings.aiKey); }
+  catch (e) { el.textContent = `Key test failed: ${e.message}`; }
 });
 async function testServer(u) {
   const el = $('aiStatus');
   el.textContent = 'Checking your server…';
   try {
-    const r = await fetch(u.replace(/\/+$/, '').replace(/\/plan$/, '') + '/health');
-    const h = await r.json();
-    if (!h.ok) throw new Error('not a Runway server');
+    const h = await pingServer(u, state.settings.aiToken);
     el.textContent = `Connected — ${h.provider === 'ollama' ? 'local model' : 'Claude'} (${h.model}) on your server${h.auth && !state.settings.aiToken ? '. It wants a password — enter it below.' : '.'}`;
   } catch (e) {
     el.textContent = 'Can’t reach that server. Check the URL, that it’s running, and that it’s reachable from this phone (see backend/README.md).';
   }
 }
 function renderAiStatus() {
-  $('aiStatus').textContent = state.settings.aiEndpoint ? 'On — plans come from your Runway server.' : state.settings.aiKey ? `On — plans come from Claude (${AI_MODEL}) directly. The key stays on this phone.` : 'Off — plans come from the built-in rules. Connect a server or paste a key to turn on real understanding of what you say.';
+  $('aiStatus').textContent = state.settings.aiEndpoint ? 'On — plans come from your Runway server. Tap Test to check it.' : state.settings.aiKey ? `On — plans come from Claude (${AI_MODEL}) directly. Tap Test to be sure the key works.` : 'Off — plans come from the built-in rules. Connect a server or paste a key to turn on real understanding of what you say.';
 }
 
 function openSettings() {

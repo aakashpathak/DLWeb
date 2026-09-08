@@ -36,35 +36,58 @@ async function planViaServer({ text, prefs, endpoint, token, now }) {
 }
 
 async function planDirect({ text, prefs, apiKey, now }) {
-  const res = await fetch(API, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true',
-      'anthropic-beta': 'server-side-fallback-2026-07-01',
-    },
-    body: JSON.stringify({
-      model: AI_MODEL,
-      max_tokens: 8000,
-      output_config: { effort: 'medium', format: { type: 'json_schema', schema: PLAN_SCHEMA } },
-      fallbacks: 'default',
-      system: buildSystemPrompt({ prefs, now, tz: TZ() }),
-      messages: [{ role: 'user', content: text }],
-    }),
-  });
-  if (!res.ok) {
-    let detail = '';
-    try { detail = (await res.json()).error?.message || ''; } catch (e) { /* ignore */ }
-    const err = new Error(res.status === 401 ? 'That API key was rejected.' : res.status === 429 ? 'Rate limited — try again in a moment.' : `Claude API error ${res.status}${detail ? ': ' + detail : ''}`);
-    err.status = res.status; throw err;
-  }
-  const msg = await res.json();
+  const body = {
+    model: AI_MODEL,
+    max_tokens: 8000,
+    output_config: { effort: 'medium', format: { type: 'json_schema', schema: PLAN_SCHEMA } },
+    system: buildSystemPrompt({ prefs, now, tz: TZ() }),
+    messages: [{ role: 'user', content: text }],
+  };
+  const msg = await callAnthropic(apiKey, body);
   if (msg.stop_reason === 'refusal') throw new Error('Claude declined this request.');
   const textBlock = (msg.content || []).find((b) => b.type === 'text');
   if (!textBlock) throw new Error('Empty response from Claude.');
   return { ...normalizePlan(extractJSON(textBlock.text)), model: msg.model, provider: 'claude' };
+}
+
+// One call to the Messages API from the phone. Tries the server-side refusal
+// fallback first; if the API rejects that (older account/API), retries plain.
+async function callAnthropic(apiKey, body, { withFallback = true } = {}) {
+  const headers = {
+    'content-type': 'application/json',
+    'x-api-key': apiKey,
+    'anthropic-version': '2023-06-01',
+    'anthropic-dangerous-direct-browser-access': 'true',
+  };
+  const payload = { ...body };
+  if (withFallback) { headers['anthropic-beta'] = 'server-side-fallback-2026-07-01'; payload.fallbacks = 'default'; }
+  let res;
+  try { res = await fetch(API, { method: 'POST', headers, body: JSON.stringify(payload) }); }
+  catch (e) { throw new Error('No connection to the Claude API. Check the internet connection.'); }
+  if (!res.ok) {
+    let detail = '';
+    try { detail = (await res.json()).error?.message || ''; } catch (e) { /* ignore */ }
+    if (res.status === 400 && withFallback) return callAnthropic(apiKey, body, { withFallback: false });
+    const err = new Error(res.status === 401 ? 'That API key was rejected.' : res.status === 403 ? 'This key isn’t allowed to do that (check billing / permissions).' : res.status === 429 ? 'Rate limited — try again in a moment.' : `Claude API error ${res.status}${detail ? ': ' + detail : ''}`);
+    err.status = res.status; throw err;
+  }
+  return res.json();
+}
+
+// Settings → "Test key": one tiny request, returns a human sentence.
+export async function testApiKey(apiKey) {
+  const msg = await callAnthropic(apiKey, { model: AI_MODEL, max_tokens: 20, messages: [{ role: 'user', content: 'Reply with the single word: ready' }] });
+  const t = (msg.content || []).find((b) => b.type === 'text')?.text || '';
+  return `Key works. ${msg.model} said “${t.trim().slice(0, 30)}”.`;
+}
+
+// Settings → "Test server".
+export async function testServer(endpoint, token) {
+  const base = endpoint.replace(/\/+$/, '').replace(/\/plan$/, '');
+  const r = await fetch(`${base}/health`);
+  const h = await r.json();
+  if (!h.ok) throw new Error('not a Runway server');
+  return h;
 }
 
 // --- Editing an AI-made plan without re-asking ---------------------------
