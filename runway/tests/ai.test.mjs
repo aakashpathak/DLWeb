@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { planWithAI, shiftSteps, resizeStep, nextOccurrence } from '../ai.js';
+import { planWithAI, shiftSteps, resizeStep, nextOccurrence, AI_MODEL } from '../ai.js';
 
 const day = (h, m = 0) => { const d = new Date(2026, 8, 11, h, m); return d; };
 const iso = (h, m) => day(h, m).toISOString();
@@ -31,7 +31,8 @@ test('planWithAI sends the right request and normalizes the plan', async () => {
   mockFetch({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(MODEL_PLAN) }] });
   const plan = await planWithAI({ text: 'Run 12 miles each week, takes three hours, leave at six', prefs: {}, apiKey: 'sk-ant-test', now: day(15) });
   const req = mockFetch.last;
-  assert.equal(req.opts.model, 'claude-opus-5');
+  assert.equal(req.opts.model, AI_MODEL);
+  assert.equal(req.headers['anthropic-beta'], undefined); // no fallback beta on Sonnet
   assert.equal(req.opts.output_config.format.type, 'json_schema');
   assert.equal(req.headers['anthropic-dangerous-direct-browser-access'], 'true');
   assert.match(req.opts.system, /Friday, September 11, 2026/);
@@ -101,17 +102,15 @@ test('server errors are shown in plain words', async () => {
   await assert.rejects(() => planWithAI({ text: 'x', prefs: {}, endpoint: 'https://s', token: 'bad' }), /Wrong server password/);
 });
 
-test('a 400 on the fallback beta retries the same request without it', async () => {
+test('on Sonnet the fallback beta is never sent, so a good reply needs one call', async () => {
   let calls = [];
   globalThis.fetch = async (url, opts) => {
     calls.push({ headers: opts.headers, body: JSON.parse(opts.body) });
-    if (calls.length === 1) return { ok: false, status: 400, json: async () => ({ error: { message: 'Unexpected value(s) `server-side-fallback-2026-07-01` for the `anthropic-beta` header' } }) };
-    return { ok: true, status: 200, json: async () => ({ stop_reason: 'end_turn', model: 'claude-opus-5', content: [{ type: 'text', text: JSON.stringify(MODEL_PLAN) }] }) };
+    return { ok: true, status: 200, json: async () => ({ stop_reason: 'end_turn', model: AI_MODEL, content: [{ type: 'text', text: JSON.stringify(MODEL_PLAN) }] }) };
   };
   const plan = await planWithAI({ text: 'run', prefs: {}, apiKey: 'sk-ant-x', now: day(15) });
-  assert.equal(calls.length, 2);
-  assert.ok(calls[0].headers['anthropic-beta'] && calls[0].body.fallbacks === 'default');
-  assert.ok(!calls[1].headers['anthropic-beta'] && !('fallbacks' in calls[1].body));
+  assert.equal(calls.length, 1);
+  assert.ok(!calls[0].headers['anthropic-beta'] && !('fallbacks' in calls[0].body));
   assert.equal(plan.title, 'Weekly 12-mile run');
 });
 
@@ -131,7 +130,7 @@ test('a 400 on structured output falls back to a plain-JSON prompt', async () =>
     return { ok: true, status: 200, json: async () => ({ stop_reason: 'end_turn', model: 'claude-opus-5', content: [{ type: 'text', text: '```json\n' + JSON.stringify(MODEL_PLAN) + '\n```' }] }) };
   };
   const plan = await planWithAI({ text: 'run', prefs: {}, apiKey: 'sk-ant-x', now: day(15) });
-  assert.equal(calls.length, 3); // with fallback beta, without it, then plain-JSON prompt
-  assert.ok(!calls[2].output_config && /Output ONLY a JSON object/.test(calls[2].system));
+  assert.equal(calls.length, 2); // structured output, then plain-JSON prompt
+  assert.ok(!calls[1].output_config && /Output ONLY a JSON object/.test(calls[1].system));
   assert.equal(plan.steps.length, 6);
 });

@@ -23,7 +23,7 @@ store.load();
 store.subscribe(render);
 render();
 $('todayLabel').textContent = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
-$('version').textContent = 'Runway 0.1 · plans run on your phone';
+$('version').textContent = 'Runway 0.2 · rules on your phone, Claude when a key or server is set';
 setInterval(tick, 20000);
 tick();
 if (!NATIVE && 'serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

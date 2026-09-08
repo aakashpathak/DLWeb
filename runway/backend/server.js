@@ -25,7 +25,7 @@ const cfg = {
   port: Number(process.env.PORT || 8787),
   token: process.env.RUNWAY_TOKEN || '',
   origins: (process.env.ALLOWED_ORIGINS || '*').split(',').map((s) => s.trim()).filter(Boolean),
-  claudeModel: process.env.CLAUDE_MODEL || 'claude-opus-5',
+  claudeModel: process.env.CLAUDE_MODEL || 'claude-sonnet-5',
   claudeEffort: process.env.CLAUDE_EFFORT || 'medium',
   ollamaUrl: (process.env.OLLAMA_URL || 'http://127.0.0.1:11434').replace(/\/$/, ''),
   ollamaModel: process.env.OLLAMA_MODEL || 'qwen2.5:7b',
@@ -44,12 +44,16 @@ async function planWithClaude({ text, prefs, tz, now }) {
     output_config: { effort: cfg.claudeEffort, format: { type: 'json_schema', schema: PLAN_SCHEMA } },
   };
   let msg;
-  try {
-    // Server-side refusal fallback: if a safety classifier declines, the API re-runs on a fallback model in the same call.
-    msg = await anthropic.beta.messages.create({ ...params, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' });
-  } catch (e) {
-    if (e instanceof Anthropic.BadRequestError) msg = await anthropic.messages.create(params); // older SDK/API without fallbacks
-    else throw e;
+  if (/opus-5|fable/.test(cfg.claudeModel)) {
+    try {
+      // Server-side refusal fallback (Opus 5 / Fable): if a safety classifier declines, the API re-runs on a fallback model in the same call.
+      msg = await anthropic.beta.messages.create({ ...params, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' });
+    } catch (e) {
+      if (e instanceof Anthropic.BadRequestError) msg = await anthropic.messages.create(params);
+      else throw e;
+    }
+  } else {
+    msg = await anthropic.messages.create(params);
   }
   if (msg.stop_reason === 'refusal') throw httpError(422, 'Claude declined this request.');
   const block = msg.content.find((b) => b.type === 'text');
