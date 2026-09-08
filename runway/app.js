@@ -188,7 +188,12 @@ function taskCard(t, now, overlapWith) {
       if (act === 'retry') retryWithAI(t);
       if (act === 'cal') openCalendar(t);
       if (act === 'done') { t.done = !t.done; t.updatedAt = Date.now(); if (t.done) { t.steps.forEach((s) => (s.done = true)); spawnRepeat(t); } store.save(); toast(t.done ? 'Nice. Done.' : 'Reopened'); }
-      if (act === 'delete') { if (confirm(`Delete “${t.title}”?`)) { state.tasks = state.tasks.filter((x) => x.id !== t.id); store.save(); } }
+      if (act === 'delete') {
+        const btn = e.target.closest('[data-act="delete"]');
+        if (btn.dataset.armed) { state.tasks = state.tasks.filter((x) => x.id !== t.id); store.save(); toast('Deleted'); return; }
+        btn.dataset.armed = '1'; btn.textContent = 'Really delete?'; btn.classList.remove('ghost');
+        setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = 'Delete'; btn.classList.add('ghost'); } }, 3000);
+      }
     });
     el.appendChild(tools);
   }
@@ -466,9 +471,11 @@ function saveNew() {
 // ---------------------------------------------------------------------------
 $('edCancel').addEventListener('click', closeSheets);
 $('edSave').addEventListener('click', saveEdit);
-$('edDelete').addEventListener('click', () => {
-  const t = state.tasks.find((x) => x.id === editingId);
-  if (t && confirm(`Delete “${t.title}”?`)) { state.tasks = state.tasks.filter((x) => x.id !== editingId); store.save(); closeSheets(); }
+$('edDelete').addEventListener('click', (e) => {
+  const btn = e.currentTarget;
+  if (!btn.dataset.armed) { btn.dataset.armed = '1'; btn.textContent = 'Really delete?'; btn.classList.remove('ghost'); setTimeout(() => { delete btn.dataset.armed; btn.textContent = 'Delete'; btn.classList.add('ghost'); }, 3000); return; }
+  delete btn.dataset.armed; btn.textContent = 'Delete'; btn.classList.add('ghost');
+  state.tasks = state.tasks.filter((x) => x.id !== editingId); store.save(); closeSheets(); toast('Deleted');
 });
 
 function openEdit(id, focusTime) {
@@ -609,7 +616,11 @@ $('exportBtn').addEventListener('click', () => {
   if (navigator.share) navigator.share({ title: 'Runway export', text }).catch(() => {});
   else { navigator.clipboard?.writeText(text); toast('Copied to clipboard'); }
 });
-$('wipeBtn').addEventListener('click', () => { if (confirm('Delete every task and reset settings on this phone?')) { store.wipe(); closeSheets(); } });
+$('wipeBtn').addEventListener('click', (e) => {
+  const btn = e.currentTarget;
+  if (!btn.dataset.armed) { btn.dataset.armed = '1'; btn.textContent = 'Really delete everything?'; setTimeout(() => { delete btn.dataset.armed; btn.textContent = 'Delete everything'; }, 3000); return; }
+  store.wipe(); closeSheets(); toast('Everything deleted');
+});
 $('notifBtn').addEventListener('click', enableNotifications);
 function aiEnabled() { return !!(state.settings.aiEndpoint || state.settings.aiKey); }
 function aiArgs() { return { endpoint: state.settings.aiEndpoint || '', token: state.settings.aiToken || '', apiKey: state.settings.aiKey || '' }; }

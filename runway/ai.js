@@ -43,7 +43,13 @@ async function planDirect({ text, prefs, apiKey, now }) {
     system: buildSystemPrompt({ prefs, now, tz: TZ() }),
     messages: [{ role: 'user', content: text }],
   };
-  const msg = await callAnthropic(apiKey, body);
+  let msg;
+  try { msg = await callAnthropic(apiKey, body); }
+  catch (e) {
+    if (e.status !== 400) throw e;
+    // The API didn't like the structured-output settings: ask for plain JSON instead and parse it ourselves.
+    msg = await callAnthropic(apiKey, { model: AI_MODEL, max_tokens: 8000, system: buildSystemPrompt({ prefs, now, tz: TZ(), smallModel: true }), messages: [{ role: 'user', content: text }] }, { withFallback: false });
+  }
   if (msg.stop_reason === 'refusal') throw new Error('Claude declined this request.');
   const textBlock = (msg.content || []).find((b) => b.type === 'text');
   if (!textBlock) throw new Error('Empty response from Claude.');
