@@ -145,7 +145,8 @@ a.btn { display: block; text-decoration: none; margin-bottom: 8px; }
 
 /* Sheets */
 .sheet-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 20; }
-.sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 21; background: var(--card); border-radius: 24px 24px 0 0; padding: 8px 20px calc(18px + var(--safe-b)); box-shadow: 0 -10px 40px rgba(0,0,0,.2); max-height: 92dvh; display: flex; flex-direction: column; animation: up .22s ease-out; }
+.sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 21; background: var(--card); border-radius: 24px 24px 0 0; padding: 8px 20px calc(18px + var(--safe-b)); box-shadow: 0 -10px 40px rgba(0,0,0,.2); max-height: 92dvh; display: flex; flex-direction: column; animation: up .22s ease-out; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+.sheet-step, .sheet > .field, .sheet > .toggles { flex: none; }
 @keyframes up { from { transform: translateY(30px); opacity: 0; } to { transform: none; opacity: 1; } }
 .sheet-handle { width: 40px; height: 5px; border-radius: 3px; background: var(--line); margin: 4px auto 12px; }
 .sheet-title { font-size: 22px; margin-bottom: 12px; }

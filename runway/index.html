@@ -14,7 +14,7 @@
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icons/icon-180.png" />
   <link rel="icon" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="styles.css?v=3" />
+  <link rel="stylesheet" href="styles.css?v=4" />
 </head>
 <body>
   <div id="app" class="app">
@@ -130,7 +130,8 @@
       <label class="field"><span>Runway server URL</span><input type="url" id="aiEndpoint" placeholder="https://…trycloudflare.com" autocomplete="off" autocapitalize="off" inputmode="url" /></label>
       <label class="field"><span>Server password</span><input type="password" id="aiToken" placeholder="the RUNWAY_TOKEN from the server" autocomplete="off" /></label>
       <p class="muted small">Recommended: run the little server in <b>backend/</b> on any computer. It keeps the key off the phone and can use Claude or a local model. Or, for a quick test, paste an Anthropic key directly:</p>
-      <label class="field"><span>Anthropic API key (direct)</span><input type="password" id="aiKey" placeholder="sk-ant-…" autocomplete="off" /></label>
+      <label class="field"><span>Anthropic API key (direct)</span><input type="password" id="aiKey" placeholder="sk-ant-…" autocomplete="off" autocapitalize="off" spellcheck="false" /></label>
+      <button class="btn secondary" id="aiTest" type="button">Test</button>
 
       <h3>Data</h3>
       <div class="row-btns">
@@ -201,6 +202,6 @@
 
   <div class="toast" id="toast" hidden></div>
 
-  <script type="module" src="app.js?v=3"></script>
+  <script type="module" src="app.js?v=4"></script>
 </body>
 </html>

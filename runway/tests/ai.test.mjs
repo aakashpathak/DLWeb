@@ -100,3 +100,25 @@ test('server errors are shown in plain words', async () => {
   mockFetch({ error: 'Wrong server password.' }, 401);
   await assert.rejects(() => planWithAI({ text: 'x', prefs: {}, endpoint: 'https://s', token: 'bad' }), /Wrong server password/);
 });
+
+test('a 400 on the fallback beta retries the same request without it', async () => {
+  let calls = [];
+  globalThis.fetch = async (url, opts) => {
+    calls.push({ headers: opts.headers, body: JSON.parse(opts.body) });
+    if (calls.length === 1) return { ok: false, status: 400, json: async () => ({ error: { message: 'Unexpected value(s) `server-side-fallback-2026-07-01` for the `anthropic-beta` header' } }) };
+    return { ok: true, status: 200, json: async () => ({ stop_reason: 'end_turn', model: 'claude-opus-5', content: [{ type: 'text', text: JSON.stringify(MODEL_PLAN) }] }) };
+  };
+  const plan = await planWithAI({ text: 'run', prefs: {}, apiKey: 'sk-ant-x', now: day(15) });
+  assert.equal(calls.length, 2);
+  assert.ok(calls[0].headers['anthropic-beta'] && calls[0].body.fallbacks === 'default');
+  assert.ok(!calls[1].headers['anthropic-beta'] && !('fallbacks' in calls[1].body));
+  assert.equal(plan.title, 'Weekly 12-mile run');
+});
+
+test('testApiKey reports a working key in plain words', async () => {
+  const { testApiKey } = await import('../ai.js');
+  mockFetch({ model: 'claude-opus-5', content: [{ type: 'text', text: 'ready' }] });
+  assert.match(await testApiKey('sk-ant-x'), /Key works/);
+  mockFetch({ error: { message: 'invalid x-api-key' } }, 401);
+  await assert.rejects(() => testApiKey('sk-ant-bad'), /rejected/);
+});
