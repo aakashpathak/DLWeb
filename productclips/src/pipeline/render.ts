@@ -9,7 +9,6 @@ import { promisify } from "node:util";
 import { DATA_DIR, getAssets, getProduct, getBrandKit, projectFile, resolveFile } from "../lib/store";
 import type { Storyboard } from "../lib/schema";
 import type { ReelProps } from "../remotion/context";
-import { chromiumPath } from "./browser";
 import { ensureScore, ensureSfx } from "./music";
 import { startFileServer } from "./fileserver";
 
@@ -68,17 +67,18 @@ async function renderWith(opts: { projectId: string; renderId: string; storyboar
 /** Remotion's bundled headless shell is preferred; fall back to the system Chromium. */
 function headlessShellPath(): string | undefined {
   if (process.env.REMOTION_BROWSER) return process.env.REMOTION_BROWSER;
-  const root = process.env.PLAYWRIGHT_BROWSERS_PATH || "/opt/pw-browsers";
-  try {
-    const d = fsSync.readdirSync(root).find((x: string) => x.startsWith("chromium_headless_shell-"));
-    if (d) {
+  const roots = [process.env.PLAYWRIGHT_BROWSERS_PATH, "/opt/pw-browsers", `${process.env.HOME}/.cache/ms-playwright`].filter(Boolean) as string[];
+  for (const root of roots) {
+    try {
+      const d = fsSync.readdirSync(root).filter((x: string) => x.startsWith("chromium_headless_shell-")).sort().reverse()[0];
+      if (!d) continue;
       for (const rel of ["chrome-linux/headless_shell", "chrome-headless-shell-linux64/chrome-headless-shell"]) {
         const p = `${root}/${d}/${rel}`;
         if (fsSync.existsSync(p)) return p;
       }
-    }
-  } catch { /* none */ }
-  return chromiumPath();
+    } catch { /* not there */ }
+  }
+  return undefined; // let Remotion download its own headless shell
 }
 
 async function master(raw: string, projectId: string, renderId: string, sb: Storyboard) {

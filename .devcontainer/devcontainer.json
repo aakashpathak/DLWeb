@@ -1,0 +1,12 @@
+{
+  "name": "ProductClips",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:22",
+  "hostRequirements": { "cpus": 4, "memory": "8gb" },
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y ffmpeg && cd productclips && npm ci && npx playwright-core install --with-deps chromium && npm run build",
+  "postStartCommand": "cd productclips && (nohup npm start > /tmp/productclips.log 2>&1 &)",
+  "forwardPorts": [3000],
+  "portsAttributes": { "3000": { "label": "ProductClips", "onAutoForward": "openBrowser" } },
+  "secrets": {
+    "ANTHROPIC_API_KEY": { "description": "Optional for now. Add later for Claude-written copy and image analysis." }
+  }
+}
