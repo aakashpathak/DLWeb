@@ -8,4 +8,6 @@ export async function api<T = unknown>(url: string, init?: RequestInit & { json?
   if (!res.ok) throw new Error((data as { error?: string }).error ?? `Request failed (${res.status})`);
   return data as T;
 }
-export const fileUrl = (p?: string | null) => (p ? `/api/files/${p}` : "");
+/** Where stored files are served. The static preview build serves them relative to the page. */
+const FILE_BASE = (globalThis as { __PC_FILE_BASE?: string }).__PC_FILE_BASE ?? "/api/files/";
+export const fileUrl = (p?: string | null) => (p ? `${FILE_BASE}${p}` : "");
