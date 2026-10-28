@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#F3F5F8">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <title>Home Manager</title>
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><span class="mark" aria-hidden="true"></span><span>Home Manager</span></div>
+    <button class="status" id="statusPill" type="button"><span class="dot"></span><span id="statusText">Connecting…</span></button>
+    <button class="icon-btn" id="openSettings" type="button" aria-label="Settings">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    </button>
+  </header>
+
+  <main id="main">
+    <p class="eyebrow">✦ RING HOME MANAGER</p>
+    <h1 id="greeting">Good afternoon.</h1>
+    <p class="sub">Here’s what’s happening at home.</p>
+
+    <div id="banner" class="banner" hidden></div>
+
+    <section class="hero" id="hero">
+      <div class="hero-icon" id="heroIcon">
+        <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+      </div>
+      <div class="hero-body">
+        <div class="hero-head"><h2 id="heroTitle">Your home is in good shape</h2><span class="hero-time" id="heroTime">Just now</span></div>
+        <p id="heroText">Checking on your home…</p>
+        <div class="chips">
+          <button class="chip" id="chipHandled" type="button">0 handled</button>
+          <button class="chip" id="chipAttention" type="button">No action needed</button>
+        </div>
+      </div>
+    </section>
+
+    <div id="attentionList"></div>
+
+    <section class="card" id="handledCard">
+      <div class="card-head">
+        <div><h3>What I handled</h3><p class="muted">Today’s routine activity</p></div>
+        <button class="link" id="viewHistory" type="button">View history</button>
+      </div>
+      <ul class="events" id="handledList"></ul>
+    </section>
+
+    <form class="ask" id="askForm" autocomplete="off">
+      <span class="ask-icon" aria-hidden="true">✦</span>
+      <input id="askInput" type="text" placeholder="Ask Home Manager anything…" enterkeyhint="send">
+      <button class="ask-send" type="submit" aria-label="Ask">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+      </button>
+    </form>
+    <div class="answer" id="answer" hidden></div>
+  </main>
+
+  <!-- History -->
+  <dialog class="sheet" id="historySheet">
+    <div class="sheet-head"><h3>Today’s history</h3><button class="link" data-close type="button">Done</button></div>
+    <ul class="events" id="historyList"></ul>
+  </dialog>
+
+  <!-- Live view -->
+  <dialog class="sheet" id="liveSheet">
+    <div class="sheet-head"><h3 id="liveTitle">Front Door</h3><button class="link" data-close type="button">Done</button></div>
+    <div class="live-frame"><img id="liveImg" alt="Live camera view"><span class="live-badge">● LIVE</span></div>
+    <p class="muted small" id="liveNote">A fresh picture every few seconds.</p>
+  </dialog>
+
+  <!-- Settings -->
+  <dialog class="sheet" id="settingsSheet">
+    <div class="sheet-head"><h3>Settings</h3><button class="link" data-close type="button">Done</button></div>
+
+    <h4>Your Home Manager server</h4>
+    <p class="muted small">The small server that stays connected to Ring for you (see README). Leave empty to see a demo.</p>
+    <label>Server URL<input id="serverUrl" type="url" inputmode="url" placeholder="https://your-tunnel.trycloudflare.com" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+    <label>Server password<input id="serverKey" type="password" autocomplete="off"></label>
+    <button class="btn primary wide" id="saveServer" type="button">Save &amp; connect</button>
+    <p class="small" id="serverMsg"></p>
+
+    <div id="ringSection" hidden>
+      <h4>Ring account</h4>
+      <div id="ringLinked" hidden>
+        <p class="small">Linked to <b id="ringAccount"></b>.</p>
+        <button class="btn wide" id="unlinkRing" type="button">Unlink Ring account</button>
+      </div>
+      <form id="ringLinkForm" hidden>
+        <p class="muted small">Sign in with your Ring email and password. Ring will send a verification code. Your password goes only to your own server and is not stored; the server keeps a Ring token.</p>
+        <label>Ring email<input id="ringEmail" type="email" autocomplete="username" autocapitalize="off"></label>
+        <label>Ring password<input id="ringPassword" type="password" autocomplete="current-password"></label>
+        <button class="btn primary wide" type="submit">Link Ring account</button>
+      </form>
+      <form id="ringCodeForm" hidden>
+        <p class="small" id="ringPrompt">Enter the code Ring sent you.</p>
+        <label>Verification code<input id="ringCode" inputmode="numeric" autocomplete="one-time-code"></label>
+        <button class="btn primary wide" type="submit">Verify</button>
+      </form>
+      <p class="small" id="ringMsg"></p>
+
+      <h4>Try it</h4>
+      <p class="muted small">Send a pretend event through the same rules your real cameras use.</p>
+      <div class="sim">
+        <button class="btn" data-sim="delivery" type="button">Delivery</button>
+        <button class="btn" data-sim="stranger" type="button">Unknown person</button>
+        <button class="btn" data-sim="car" type="button">Car</button>
+        <button class="btn" data-sim="garage" type="button">Garage closed</button>
+      </div>
+      <p class="small" id="pushMsg"></p>
+    </div>
+  </dialog>
+
+  <div class="toast" id="toast" hidden></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

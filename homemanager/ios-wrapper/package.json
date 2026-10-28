@@ -1,0 +1,22 @@
+{
+  "name": "ring-home-manager-ios",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Native iOS shell for Ring Home Manager (Capacitor). Bundles the web app and adds push for events that need attention.",
+  "scripts": {
+    "prepare-www": "node scripts/prepare-www.mjs",
+    "setup": "npm run prepare-www && npx cap add ios && node scripts/patch-ios.mjs && npx @capacitor/assets generate --ios --iconBackgroundColor '#0A7AEB' --splashBackgroundColor '#F3F5F8' && npx cap sync ios",
+    "update": "npm run prepare-www && npx cap sync ios",
+    "open": "npx cap open ios"
+  },
+  "dependencies": {
+    "@capacitor/app": "^6.0.1",
+    "@capacitor/core": "^6.1.2",
+    "@capacitor/ios": "^6.1.2",
+    "@capacitor/push-notifications": "^6.0.2"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^6.1.2"
+  }
+}

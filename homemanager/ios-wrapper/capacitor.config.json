@@ -1,0 +1,15 @@
+{
+  "appId": "fyi.vaak.homemanager",
+  "appName": "Home Manager",
+  "webDir": "www",
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#F3F5F8",
+    "scheme": "HomeManager"
+  },
+  "plugins": {
+    "PushNotifications": {
+      "presentationOptions": ["badge", "sound", "alert"]
+    }
+  }
+}

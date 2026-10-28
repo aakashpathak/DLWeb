@@ -1,0 +1,17 @@
+{
+  "name": "ring-home-manager-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Ring Home Manager server: links a Ring account, handles routine events quietly, pushes only what needs attention.",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test tests/*.test.mjs",
+    "ring-token": "ring-auth-cli"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.124.0",
+    "ring-client-api": "^14.3.0"
+  }
+}
